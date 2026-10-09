@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="BAPPS - Biometric Aviation Passenger Processing System. Government border control e-gate management interface.">
+  <title>BAPPS — Border Control Terminal</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ===== TOP HEADER BAR ===== -->
+  <header class="top-bar">
+    <div class="top-bar__left">
+      <div class="top-bar__emblem">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="15" stroke="#CBD5E1" stroke-width="1.5" fill="none"/>
+          <path d="M16 4 L16 28 M4 16 L28 16 M8 8 L24 24 M24 8 L8 24" stroke="#CBD5E1" stroke-width="0.8"/>
+          <circle cx="16" cy="16" r="7" stroke="#CBD5E1" stroke-width="1.2" fill="none"/>
+          <circle cx="16" cy="16" r="2.5" fill="#CBD5E1"/>
+        </svg>
+      </div>
+      <div class="top-bar__title">
+        <span class="top-bar__system-name">BAPPS</span>
+        <span class="top-bar__system-desc">Biometric Aviation Passenger Processing System</span>
+      </div>
+    </div>
+    <div class="top-bar__right">
+      <span class="top-bar__status" id="connection-status">
+        <span class="status-dot status-dot--offline"></span>
+        Connecting…
+      </span>
+      <span class="top-bar__clock" id="header-clock">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- ===== NAVIGATION TABS ===== -->
+  <nav class="nav-tabs" id="nav-tabs">
+    <button class="nav-tab nav-tab--active" data-view="dashboard">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-tab" data-view="processing">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+      Passenger Processing
+    </button>
+    <button class="nav-tab" data-view="officer">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 101.414 1.414l2-2A1 1 0 0011 10V7z" clip-rule="evenodd"/></svg>
+      Officer Review
+      <span class="nav-tab__badge" id="officer-badge" style="display:none;">0</span>
+    </button>
+    <button class="nav-tab" data-view="camera">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+      Live AI Camera
+    </button>
+    <button class="nav-tab" data-view="audit">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+      Audit Log
+    </button>
+    <button class="nav-tab" data-view="config">
+      <svg class="nav-tab__icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+      System Config
+    </button>
+  </nav>
+
+  <!-- ===== MAIN CONTENT AREA ===== -->
+  <main class="main-content" id="main-content">
+
+    <!-- ========== DASHBOARD VIEW ========== -->
+    <section class="view" id="view-dashboard">
+      <div class="view__header">
+        <h1>Operational Dashboard</h1>
+        <button class="btn btn--outline btn--sm" id="btn-refresh-dashboard">↻ Refresh</button>
+      </div>
+
+      <div class="stat-row" id="dashboard-stats">
+        <div class="stat-card">
+          <div class="stat-card__label">Active Sessions</div>
+          <div class="stat-card__value" id="stat-active">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">Awaiting Officer</div>
+          <div class="stat-card__value stat-card__value--warn" id="stat-officer">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">Completed Today</div>
+          <div class="stat-card__value stat-card__value--ok" id="stat-completed">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">Denied Today</div>
+          <div class="stat-card__value stat-card__value--danger" id="stat-denied">—</div>
+        </div>
+      </div>
+
+      <div class="panel-row">
+        <div class="panel panel--wide">
+          <div class="panel__header">
+            <h2>Gate Status</h2>
+          </div>
+          <div class="panel__body" id="gate-status-list">
+            <p class="muted">Loading…</p>
+          </div>
+        </div>
+        <div class="panel panel--wide">
+          <div class="panel__header">
+            <h2>Kiosk Status</h2>
+          </div>
+          <div class="panel__body" id="kiosk-status-list">
+            <p class="muted">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__header">
+          <h2>Enrolled Passengers</h2>
+        </div>
+        <div class="panel__body">
+          <table class="data-table" id="passengers-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Nationality</th>
+                <th>Passport</th>
+                <th>DOB</th>
+                <th>Scenario</th>
+              </tr>
+            </thead>
+            <tbody id="passengers-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__header">
+          <h2>Recent Sessions</h2>
+        </div>
+        <div class="panel__body">
+          <table class="data-table" id="sessions-table">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Passenger</th>
+                <th>State</th>
+                <th>Gate</th>
+                <th>Next Action</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== PASSENGER PROCESSING VIEW ========== -->
+    <section class="view hidden" id="view-processing">
+      <div class="view__header">
+        <h1>Passenger Processing</h1>
+      </div>
+
+      <!-- Step 1: Document Scan & Passport Upload -->
+      <div class="panel" id="step-scan">
+        <div class="panel__header">
+          <h2>Step 1 — Passport Document Upload &amp; Verification</h2>
+          <span class="badge badge--amber" id="upload-mandate-badge">Passport Document Upload Required</span>
+        </div>
+        <div class="panel__body">
+          <!-- Passport File Upload Dropzone -->
+          <div class="passport-upload-section">
+            <div class="passport-dropzone" id="passport-dropzone">
+              <input type="file" id="passport-file-input" accept="image/*" class="hidden">
+              <div class="dropzone-content" id="dropzone-prompt">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M12 12v9m-4-4 4-4 4 4"/>
+                </svg>
+                <div class="dropzone-text">
+                  <strong>Click to Upload Passport Document / Photo</strong> or drag &amp; drop file here
+                  <div class="muted" style="font-size:0.75rem;margin-top:2px;">Supports JPG, PNG, WEBP (Clear document scan or headshot)</div>
+                </div>
+                <button type="button" class="btn btn--outline btn--sm" id="btn-browse-passport">Browse File</button>
+              </div>
+
+              <!-- Uploaded Document Preview -->
+              <div class="passport-preview-card hidden" id="passport-preview-card">
+                <img id="passport-preview-img" src="" alt="Uploaded Passport">
+                <div class="preview-details">
+                  <div class="preview-title" id="passport-file-name">passport_scan.jpg</div>
+                  <div class="preview-status" id="passport-file-status">
+                    <span class="status-dot status-dot--online"></span>
+                    <span id="passport-status-text">Face Portrait Extracted (Ready)</span>
+                  </div>
+                  <button type="button" class="btn btn--outline btn--xs" id="btn-remove-passport">✕ Change File</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <form id="scan-form" class="form-inline" style="margin-top:16px;">
+            <div class="form-group">
+              <label for="scan-passport">Passport Number</label>
+              <input type="text" id="scan-passport" placeholder="e.g. N4821907 or any new ID" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="scan-booking">Booking ID</label>
+              <input type="text" id="scan-booking" placeholder="e.g. BK-5001" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="scan-kiosk">Kiosk</label>
+              <select id="scan-kiosk">
+                <option value="KIOSK-01">KIOSK-01</option>
+                <option value="KIOSK-02">KIOSK-02</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn--primary" id="btn-scan">Scan &amp; Ingest Passport</button>
+          </form>
+
+          <div class="quick-select">
+            <span class="quick-select__label">Quick select + Attach Sample Passport:</span>
+            <button class="btn btn--outline btn--xs" data-passport="N4821907" data-booking="BK-5001">P-1001 Aarav (Clean)</button>
+            <button class="btn btn--outline btn--xs" data-passport="G7305518" data-booking="BK-5002">P-1002 Emily (Flaky)</button>
+            <button class="btn btn--outline btn--xs" data-passport="N9917342" data-booking="BK-5003">P-1003 Rohan (Spoof)</button>
+            <button class="btn btn--outline btn--xs" data-passport="C5520871" data-booking="BK-5004">P-1004 Marcus (Watchlist)</button>
+            <button class="btn btn--outline btn--xs" data-passport="N3304415" data-booking="BK-5005">P-1005 Priya (Expired)</button>
+            <button class="btn btn--outline btn--xs" data-passport="E6618240" data-booking="BK-5006">P-1006 Sofia (Mismatch)</button>
+            <button class="btn btn--outline btn--xs" data-passport="I2290763" data-booking="BK-5007">P-1007 Liam (Critical)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Session Panel (hidden until scan) -->
+      <div class="panel hidden" id="active-session-panel">
+        <div class="panel__header">
+          <h2>Active Session: <span id="active-session-id">—</span></h2>
+          <span class="badge" id="active-session-state">—</span>
+        </div>
+        <div class="panel__body">
+          <!-- Pipeline Progress -->
+          <div class="pipeline" id="pipeline">
+            <div class="pipeline__step pipeline__step--active" data-step="scan">
+              <div class="pipeline__dot"></div>
+              <div class="pipeline__label">Scan</div>
+            </div>
+            <div class="pipeline__connector"></div>
+            <div class="pipeline__step" data-step="face">
+              <div class="pipeline__dot"></div>
+              <div class="pipeline__label">Face Verify</div>
+            </div>
+            <div class="pipeline__connector"></div>
+            <div class="pipeline__step" data-step="checks">
+              <div class="pipeline__dot"></div>
+              <div class="pipeline__label">Checks</div>
+            </div>
+            <div class="pipeline__connector"></div>
+            <div class="pipeline__step" data-step="decision">
+              <div class="pipeline__dot"></div>
+              <div class="pipeline__label">Decision</div>
+            </div>
+            <div class="pipeline__connector"></div>
+            <div class="pipeline__step" data-step="passage">
+              <div class="pipeline__dot"></div>
+              <div class="pipeline__label">Passage</div>
+            </div>
+          </div>
+
+          <!-- Session Info Grid -->
+          <div class="session-info" id="session-info">
+            <!-- Filled by JS -->
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-bar" id="action-bar">
+            <button class="btn btn--primary btn--with-icon" id="btn-open-camera" disabled>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+              Live Camera Popup
+            </button>
+            <button class="btn btn--outline" id="btn-face-verify" disabled>⚡ Quick Simulate</button>
+            <button class="btn btn--primary" id="btn-run-checks" disabled>Run Immigration Checks</button>
+            <button class="btn btn--primary" id="btn-decision" disabled>Request Gate Decision</button>
+            <button class="btn btn--primary" id="btn-passage" disabled>Confirm Passage</button>
+            <button class="btn btn--outline" id="btn-new-session">New Session</button>
+          </div>
+
+          <!-- Attempt Log -->
+          <div class="attempt-log hidden" id="attempt-log">
+            <h3>Face Verification Attempts</h3>
+            <div id="attempt-log-entries"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== OFFICER REVIEW VIEW ========== -->
+    <section class="view hidden" id="view-officer">
+      <div class="view__header">
+        <h1>Officer Review Queue</h1>
+        <button class="btn btn--outline btn--sm" id="btn-refresh-reviews">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel__body" id="reviews-list">
+          <p class="muted">Loading pending reviews…</p>
+        </div>
+      </div>
+
+      <!-- Officer Override Modal (inline) -->
+      <div class="modal-overlay hidden" id="override-modal">
+        <div class="modal">
+          <div class="modal__header">
+            <h2>Officer Override — <span id="override-session-id">—</span></h2>
+            <button class="modal__close" id="override-close">&times;</button>
+          </div>
+          <div class="modal__body">
+            <div class="session-info" id="override-session-info"></div>
+            <form id="override-form">
+              <div class="form-group">
+                <label for="override-officer">Officer ID</label>
+                <select id="override-officer">
+                  <option value="OFF-001">OFF-001 — Meera Iyer</option>
+                  <option value="OFF-002">OFF-002 — Daniel Brooks</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="override-notes">Justification Notes (min 10 characters)</label>
+                <textarea id="override-notes" rows="3" minlength="10" placeholder="Detailed reason for decision…"></textarea>
+              </div>
+              <div class="action-bar">
+                <button type="button" class="btn btn--success" id="btn-override-approve">Approve</button>
+                <button type="button" class="btn btn--danger" id="btn-override-deny">Deny</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== AUDIT LOG VIEW ========== -->
+    <section class="view hidden" id="view-audit">
+      <div class="view__header">
+        <h1>Audit Trail</h1>
+        <div class="view__header-actions">
+          <button class="btn btn--outline btn--sm" id="btn-verify-chain">Verify Chain Integrity</button>
+          <button class="btn btn--outline btn--sm" id="btn-refresh-audit">↻ Refresh</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__header">
+          <form class="form-inline form-inline--tight" id="audit-filter-form">
+            <div class="form-group">
+              <label for="audit-session">Session ID</label>
+              <input type="text" id="audit-session" placeholder="SES-…">
+            </div>
+            <div class="form-group">
+              <label for="audit-event">Event Type</label>
+              <input type="text" id="audit-event" placeholder="e.g. FACE_ATTEMPT">
+            </div>
+            <div class="form-group">
+              <label for="audit-actor">Actor ID</label>
+              <input type="text" id="audit-actor" placeholder="e.g. OFF-001">
+            </div>
+            <button type="submit" class="btn btn--primary btn--sm">Filter</button>
+            <button type="button" class="btn btn--outline btn--sm" id="btn-audit-clear">Clear</button>
+          </form>
+        </div>
+        <div class="panel__body">
+          <div id="chain-status" class="chain-status hidden"></div>
+          <table class="data-table data-table--compact" id="audit-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+                <th>Session</th>
+                <th>Event</th>
+                <th>Actor</th>
+                <th>Decision</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+          <div class="pagination" id="audit-pagination"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SYSTEM CONFIG VIEW ========== -->
+    <section class="view hidden" id="view-config">
+      <div class="view__header">
+        <h1>System Configuration</h1>
+      </div>
+
+      <div class="panel-row">
+        <div class="panel">
+          <div class="panel__header">
+            <h2>Biometric Thresholds</h2>
+          </div>
+          <div class="panel__body">
+            <div class="config-grid" id="config-display">
+              <div class="config-item">
+                <span class="config-item__label">Face Match Threshold</span>
+                <span class="config-item__value" id="cfg-match">—</span>
+              </div>
+              <div class="config-item">
+                <span class="config-item__label">Liveness Threshold</span>
+                <span class="config-item__value" id="cfg-liveness">—</span>
+              </div>
+              <div class="config-item">
+                <span class="config-item__label">Max Face Attempts</span>
+                <span class="config-item__value" id="cfg-attempts">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel__header">
+            <h2>Update Thresholds</h2>
+          </div>
+          <div class="panel__body">
+            <form id="config-form">
+              <div class="form-group">
+                <label for="cfg-new-match">Match Threshold (0.01–1.0)</label>
+                <input type="number" id="cfg-new-match" step="0.01" min="0.01" max="1.0" placeholder="e.g. 0.85">
+              </div>
+              <div class="form-group">
+                <label for="cfg-new-liveness">Liveness Threshold (0.01–1.0)</label>
+                <input type="number" id="cfg-new-liveness" step="0.01" min="0.01" max="1.0" placeholder="e.g. 0.80">
+              </div>
+              <div class="form-group">
+                <label for="cfg-new-attempts">Max Attempts (1–10)</label>
+                <input type="number" id="cfg-new-attempts" step="1" min="1" max="10" placeholder="e.g. 3">
+              </div>
+              <div class="action-bar">
+                <button type="submit" class="btn btn--primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__header">
+          <h2>Demo Controls</h2>
+        </div>
+        <div class="panel__body">
+          <p class="muted" style="margin-bottom:12px;">Reset the database to its initial seeded state. All sessions, audit entries, and configuration changes will be erased.</p>
+          <button class="btn btn--danger" id="btn-reset-db">Reset Database</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== LIVE AI CAMERA STUDIO VIEW ========== -->
+    <section class="view hidden" id="view-camera">
+      <div class="view__header">
+        <h1>Live AI Face Recognition Studio</h1>
+        <div class="view__header-actions">
+          <button class="btn btn--primary btn--sm btn--with-icon" id="btn-studio-open-modal">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+            Launch Camera Popup Modal
+          </button>
+          <span class="badge badge--green" id="camera-engine-badge">MediaPipe AI Engine Online</span>
+        </div>
+      </div>
+
+      <div class="panel-row">
+        <div class="panel panel--wide">
+          <div class="panel__header">
+            <h2>Biometric Capture Feed</h2>
+            <div class="camera-controls-mini">
+              <button class="btn btn--outline btn--xs" id="btn-camera-switch">Flip / Next Camera</button>
+            </div>
+          </div>
+          <div class="panel__body camera-viewport-container">
+            <div class="camera-stage" id="camera-studio-stage">
+              <video id="studio-video" autoplay playsinline muted></video>
+              <canvas id="studio-canvas"></canvas>
+              <div class="camera-hud-overlay">
+                <div class="hud-target-oval"></div>
+                <div class="hud-corner hud-corner--tl"></div>
+                <div class="hud-corner hud-corner--tr"></div>
+                <div class="hud-corner hud-corner--bl"></div>
+                <div class="hud-corner hud-corner--br"></div>
+                <div class="hud-guidance" id="studio-guidance">Initializing AI camera...</div>
+                <div class="hud-scan-line"></div>
+              </div>
+            </div>
+
+            <div class="camera-action-row">
+              <button class="btn btn--primary btn--with-icon" id="btn-studio-start">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                Start Camera
+              </button>
+              <button class="btn btn--danger btn--with-icon hidden" id="btn-studio-stop">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"/></svg>
+                Stop Camera
+              </button>
+              <button class="btn btn--success" id="btn-studio-scan-now" disabled>📸 Run AI Verification</button>
+              <label class="checkbox-inline">
+                <input type="checkbox" id="chk-auto-scan" checked> Continuous Live Tracking (30fps)
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel panel--narrow">
+          <div class="panel__header">
+            <h2>Real-time AI Biometric Telemetry</h2>
+          </div>
+          <div class="panel__body">
+            <div class="telemetry-grid">
+              <div class="telemetry-card">
+                <div class="telemetry-label">Detection Status</div>
+                <div class="telemetry-value" id="telem-status">STANDBY</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">3D Landmarks Count</div>
+                <div class="telemetry-value" id="telem-landmarks">—</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">Liveness Confidence</div>
+                <div class="telemetry-value" id="telem-liveness">—</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">3D Depth Structure</div>
+                <div class="telemetry-value" id="telem-depth">—</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">Eye Openness / Blink</div>
+                <div class="telemetry-value" id="telem-eyes">—</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">Pose Orientation (Yaw/Pitch)</div>
+                <div class="telemetry-value" id="telem-pose">—</div>
+              </div>
+              <div class="telemetry-card">
+                <div class="telemetry-label">Illumination Quality</div>
+                <div class="telemetry-value" id="telem-lighting">—</div>
+              </div>
+            </div>
+
+            <div class="studio-match-target">
+              <h3>Match Against Passenger</h3>
+              <div class="form-group">
+                <select id="studio-passenger-select">
+                  <option value="">-- Select Passenger to Match --</option>
+                </select>
+              </div>
+              <div class="action-bar" style="margin-top:8px;">
+                <button class="btn btn--primary" id="btn-studio-match-passenger" disabled>Verify Face Match</button>
+                <button class="btn btn--outline" id="btn-studio-enroll-passenger" disabled>Enrol This Face</button>
+              </div>
+              <div id="studio-match-result" class="match-result-box hidden"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== LIVE CAMERA POPUP MODAL (FOR E-GATE WORKSTATION) ===== -->
+  <div class="modal-overlay hidden" id="camera-modal">
+    <div class="modal modal--camera">
+      <div class="modal__header">
+        <div class="modal__title-group">
+          <h2>ICAO 9303 Biometric Camera Capture</h2>
+          <span class="badge badge--blue" id="modal-session-tag">SESSION: —</span>
+        </div>
+        <button class="modal__close" id="camera-modal-close">&times;</button>
+      </div>
+      <div class="modal__body">
+        <div class="modal-camera-layout">
+          <div class="modal-camera-main">
+            <div class="camera-stage" id="modal-camera-stage">
+              <video id="modal-video" autoplay playsinline muted></video>
+              <canvas id="modal-canvas"></canvas>
+              <div class="camera-hud-overlay">
+                <div class="hud-target-oval"></div>
+                <div class="hud-corner hud-corner--tl"></div>
+                <div class="hud-corner hud-corner--tr"></div>
+                <div class="hud-corner hud-corner--bl"></div>
+                <div class="hud-corner hud-corner--br"></div>
+                <div class="hud-guidance" id="modal-guidance">Please align your face in the oval frame</div>
+                <div class="hud-scan-line"></div>
+              </div>
+            </div>
+
+            <div class="camera-status-strip">
+              <div class="status-indicator" id="modal-liveness-ind">
+                <span class="status-dot status-dot--offline" id="modal-dot"></span>
+                <span id="modal-liveness-text">Waiting for face alignment...</span>
+              </div>
+              <div class="telemetry-badge" id="modal-landmarks-badge">0 / 478 Landmarks</div>
+            </div>
+          </div>
+
+          <div class="modal-camera-sidebar">
+            <div class="passenger-brief" id="modal-passenger-brief">
+              <div class="brief-row"><span class="brief-label">Passenger:</span> <strong id="modal-pax-name">—</strong></div>
+              <div class="brief-row"><span class="brief-label">Passport:</span> <code id="modal-pax-passport">—</code></div>
+              <div class="brief-row"><span class="brief-label">Attempts:</span> <span id="modal-pax-attempts">—</span></div>
+            </div>
+
+            <!-- Uploaded Passport Reference Photo -->
+            <div class="passport-ref-box" id="modal-passport-ref-box">
+              <div class="passport-ref-header">Uploaded Passport Reference</div>
+              <div class="passport-ref-body">
+                <div class="passport-ref-thumb-wrapper">
+                  <img id="modal-passport-img" src="" alt="Passport Photo">
+                  <span class="ref-tag">DOC PHOTO</span>
+                </div>
+                <div class="passport-ref-info">
+                  <div class="ref-info-id" id="modal-ref-id">ID: —</div>
+                  <span class="badge badge--green" id="modal-ref-badge">Biometric Template Ready</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-live-metrics">
+              <div class="metric-row">
+                <span>Liveness Score:</span>
+                <strong id="modal-m-liveness">—</strong>
+              </div>
+              <div class="metric-bar-bg"><div class="metric-bar-fill" id="modal-bar-liveness" style="width:0%"></div></div>
+
+              <div class="metric-row">
+                <span>Head Pose Alignment:</span>
+                <strong id="modal-m-pose">—</strong>
+              </div>
+
+              <div class="metric-row">
+                <span>Eye Openness:</span>
+                <strong id="modal-m-eyes">—</strong>
+              </div>
+            </div>
+
+            <!-- Live Match Verdict Banner -->
+            <div id="modal-verdict-banner" class="match-verdict-banner hidden"></div>
+
+            <div class="modal-camera-actions">
+              <button class="btn btn--success btn--lg btn--full" id="btn-modal-capture">
+                📸 Capture &amp; Verify Face
+              </button>
+              <button class="btn btn--outline btn--sm btn--full" id="btn-modal-enroll">
+                💾 Enrol Face Template
+              </button>
+              <button class="btn btn--outline btn--sm btn--full" id="btn-modal-test-frame">
+                🧪 Use Clean Test Sample
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST CONTAINER ===== -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
