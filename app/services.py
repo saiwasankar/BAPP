@@ -452,8 +452,11 @@ def verify_face(
                 "engine_type": "SIMULATED",
                 "face_details": None,
             }
-        elif image_base64 and real_face.is_available():
-            # Real AI Face Recognition using MediaPipe
+        elif image_base64:
+            # Never send a submitted camera image to the simulator. The real
+            # image processor returns a structured failure if MediaPipe is
+            # unavailable, and handles document-only sessions without a
+            # pre-existing biometric_templates row.
             attempt_number = session["attempts"] + 1
             attempts_remaining = max(cfg["max_attempts"] - attempt_number, 0)
             real_result = real_face.process_face_image(
@@ -553,6 +556,7 @@ def verify_face(
                 "comparison_source": "UPLOADED_PASSPORT_PORTRAIT" if session["passport_photo_b64"] else "BIOMETRIC_TEMPLATE",
                 "passport_photo_b64": session["passport_photo_b64"] if "passport_photo_b64" in session.keys() else None,
                 "face_details": real_result.get("details"),
+                "message": real_result.get("message"),
             }
         else:
             # Fallback to simulated engine

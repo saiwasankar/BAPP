@@ -121,6 +121,7 @@ class FaceAttemptOut(BaseModel):
     comparison_source: Optional[str] = "UPLOADED_PASSPORT_PORTRAIT"
     passport_photo_b64: Optional[str] = None
     face_details: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
 
 
 class FaceVerifyResponse(BaseModel):
@@ -156,6 +157,7 @@ class LiveFaceDetectResponse(BaseModel):
     pose_score: Optional[float] = None
     eye_open_score: Optional[float] = None
     lighting_score: Optional[float] = None
+    spoof_probability: Optional[float] = None
     bbox: Optional[Dict[str, Any]] = None
     head_angles: Optional[Dict[str, Any]] = None
     guidance: Optional[str] = None

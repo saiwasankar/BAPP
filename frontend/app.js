@@ -28,7 +28,13 @@ async function api(method, path, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(API + path, opts);
-  const data = await res.json();
+  const raw = await res.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { detail: raw || `HTTP ${res.status}` };
+  }
   if (!res.ok) {
     const msg = data?.error?.message || data?.detail?.[0]?.msg || data?.detail || JSON.stringify(data);
     throw new Error(msg);
@@ -42,6 +48,23 @@ function toast(message, type = 'info') {
   el.textContent = message;
   document.getElementById('toast-container').appendChild(el);
   setTimeout(() => el.remove(), 4500);
+}
+
+function faceAnalysisHtml(attempt) {
+  const d = attempt?.face_details || {};
+  const pct = value => value !== null && value !== undefined && Number.isFinite(Number(value))
+    ? `${(Number(value) * 100).toFixed(1)}%` : '—';
+  const angles = d.head_angles || {};
+  const angleText = ['yaw', 'pitch', 'roll'].some(k => Number.isFinite(Number(angles[k])))
+    ? `Yaw ${angles.yaw ?? '—'}° · Pitch ${angles.pitch ?? '—'}° · Roll ${angles.roll ?? '—'}°`
+    : '—';
+  const diagnosis = attempt?.message || d.guidance || 'No additional diagnosis returned.';
+  return `<div class="face-analysis">
+    <strong>Scan analysis</strong>
+    <span>${escHtml(diagnosis)}</span>
+    <span>Liveness ${pct(attempt?.liveness_score)} · Spoof risk ${pct(d.spoof_probability)} · Lighting ${pct(d.lighting_score)}</span>
+    <span>Pose ${pct(d.pose_score)} · Eyes open ${pct(d.eye_open_score)} · ${escHtml(angleText)}</span>
+  </div>`;
 }
 
 function formatTime(iso) {
@@ -630,6 +653,7 @@ function renderSession() {
         ${engineTag}
         <span class="badge badge--${cls === 'pass' ? 'green' : cls === 'escalated' ? 'amber' : 'red'}">${a.outcome}</span>
         <span class="muted">${a.attempts_remaining} remaining</span>
+        ${faceAnalysisHtml(a)}
       </div>`;
     }).join('');
   } else {
@@ -702,9 +726,9 @@ function stopWebcam(videoEl, stream) {
 }
 
 function captureVideoFrame(videoEl) {
-  if (!videoEl || videoEl.videoWidth === 0) {
-    // If webcam feed is blocked/idle, generate real test face
-    return uploadedPassportB64 || createSamplePassportDocument('Live Test Face', 'N4821907');
+  // Never substitute the enrolled document portrait for a live camera frame.
+  if (!videoEl || videoEl.videoWidth === 0 || videoEl.videoHeight === 0 || !videoEl.srcObject) {
+    return null;
   }
   const canvas = document.createElement('canvas');
   canvas.width = videoEl.videoWidth || 640;
@@ -803,6 +827,13 @@ async function openCameraModal(session) {
       return;
     }
     const frame = captureVideoFrame(video);
+    if (!frame) {
+      document.getElementById('modal-liveness-text').textContent = 'Camera unavailable — allow camera access and retry';
+      document.getElementById('modal-guidance').textContent = 'A live camera feed is required to analyze your face.';
+      document.getElementById('modal-m-liveness').textContent = '—';
+      document.getElementById('modal-m-spoof').textContent = '—';
+      return;
+    }
     try {
       const det = await api('POST', '/api/egate/live-face-detect', { image_base64: frame });
       drawBiometricHud(canvas, video, det);
@@ -813,6 +844,8 @@ async function openCameraModal(session) {
       
       document.getElementById('modal-m-liveness').textContent = livenessScore;
       document.getElementById('modal-bar-liveness').style.width = det.liveness_score ? `${det.liveness_score * 100}%` : '0%';
+      document.getElementById('modal-m-spoof').textContent = det.spoof_probability !== null && det.spoof_probability !== undefined
+        ? `${(det.spoof_probability * 100).toFixed(1)}%` : '—';
       document.getElementById('modal-landmarks-badge').textContent = `${det.landmarks_count || 0} / 478 3D Landmarks`;
 
       if (det.head_angles) {
@@ -858,6 +891,10 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
   const video = document.getElementById('modal-video');
   const frame = captureVideoFrame(video);
   const verdictBanner = document.getElementById('modal-verdict-banner');
+  if (!frame) {
+    toast('A working camera is required for live face verification.', 'error');
+    return;
+  }
 
   try {
     toast('Executing MediaPipe AI biometric matching against uploaded passport...', 'info');
@@ -869,8 +906,10 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
     currentSession = res.session;
     faceAttempts.push(res.attempt);
     const a = res.attempt;
-    const matchPct = (a.match_score * 100).toFixed(1) + '%';
-    const livenessPct = (a.liveness_score * 100).toFixed(1) + '%';
+    const matchPct = a.match_score !== null && a.match_score !== undefined
+      ? (a.match_score * 100).toFixed(1) + '%' : '—';
+    const livenessPct = a.liveness_score !== null && a.liveness_score !== undefined
+      ? (a.liveness_score * 100).toFixed(1) + '%' : '—';
 
     verdictBanner.classList.remove('hidden');
 
@@ -880,6 +919,7 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
         <strong>✓ BIOMETRIC MATCH VERIFIED (${matchPct})</strong><br>
         Live facial scan matches the uploaded passport photo.<br>
         <span style="font-size:0.75rem;opacity:0.9;">Liveness: ${livenessPct} · 478 3D Landmarks verified · Identity Confirmed</span>
+        ${faceAnalysisHtml(a)}
       `;
       toast(`✓ Biometric Verified! Match Confidence: ${matchPct}`, 'success');
       setTimeout(() => {
@@ -887,6 +927,22 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
         renderSession();
         loadDashboard();
       }, 1400);
+    } else if (!a.liveness_passed) {
+      verdictBanner.className = 'match-verdict-banner match-verdict-banner--mismatch';
+      verdictBanner.innerHTML = `
+        <strong>✗ LIVE FACE ANALYSIS FAILED</strong><br>
+        ${escHtml(a.message || 'The camera frame could not be analyzed. Check camera access and AI model availability.')}
+        <span style="font-size:0.75rem;opacity:0.9;">Attempt ${a.attempt_number} of 3 · ${a.attempts_remaining} attempts remaining</span>
+        ${faceAnalysisHtml(a)}
+      `;
+      toast(a.message || 'Live face analysis failed. Check the camera and try again.', 'error');
+      if (a.outcome === 'ESCALATED') {
+        setTimeout(() => {
+          closeCameraModal();
+          renderSession();
+          loadDashboard();
+        }, 1800);
+      }
     } else {
       // MISMATCH: State clearly with exact score
       verdictBanner.className = 'match-verdict-banner match-verdict-banner--mismatch';
@@ -894,6 +950,7 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
         <strong>✗ BIOMETRIC MISMATCH DETECTED (${matchPct} < 85.0%)</strong><br>
         The live facial scan DOES NOT MATCH the uploaded passport photo.<br>
         <span style="font-size:0.75rem;opacity:0.9;">Attempt ${a.attempt_number} of 3 · ${a.attempts_remaining} attempts remaining</span>
+        ${faceAnalysisHtml(a)}
       `;
       toast(`✗ Biometric Mismatch (${matchPct}): Live face does not match passport.`, 'error');
       if (a.outcome === 'ESCALATED') {
@@ -982,6 +1039,11 @@ async function startStudioCamera() {
   studioTrackingTimer = setInterval(async () => {
     if (!document.getElementById('chk-auto-scan').checked) return;
     const frame = captureVideoFrame(video);
+    if (!frame) {
+      document.getElementById('telem-status').textContent = 'CAMERA UNAVAILABLE';
+      guidance.textContent = 'Start the camera and allow camera access to analyze a face.';
+      return;
+    }
     try {
       const det = await api('POST', '/api/egate/live-face-detect', { image_base64: frame });
       drawBiometricHud(canvas, video, det);

@@ -479,6 +479,7 @@ textarea { resize: vertical; min-width: 300px; }
 }
 .attempt-entry {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
@@ -492,6 +493,19 @@ textarea { resize: vertical; min-width: 300px; }
 .attempt-entry--fail { border-left: 3px solid var(--red); }
 .attempt-entry--escalated { border-left: 3px solid var(--amber); }
 .attempt-entry__num { font-weight: 700; color: var(--slate); min-width: 24px; }
+
+.face-analysis {
+  display: flex;
+  flex-direction: column;
+  flex-basis: 100%;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid currentColor;
+  font-size: 0.76rem;
+  font-weight: 400;
+}
+.face-analysis strong { font-weight: 700; }
 
 /* ---------- gate / kiosk status cards ---------- */
 .status-card-row { display: flex; gap: 12px; flex-wrap: wrap; }

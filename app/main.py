@@ -50,6 +50,9 @@ async def bapps_error_handler(request: Request, exc: BappsError) -> JSONResponse
     )
 
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(passengers.router)
 app.include_router(egate.router)
 app.include_router(immigration.router)
@@ -59,3 +62,9 @@ app.include_router(admin.router)
 @app.get("/api/health", tags=["System"], summary="Liveness probe")
 def health():
     return {"status": "ok", "service": "bapps-backend", "version": app.version}
+
+
+# Mount frontend static files so http://localhost:8000/ opens the BAPPS UI
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
