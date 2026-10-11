@@ -33,12 +33,19 @@ log = logging.getLogger(__name__)
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 LANDMARKER_MODEL_PATH = os.path.join(MODEL_DIR, "face_landmarker.task")
 DETECTOR_MODEL_PATH = os.path.join(MODEL_DIR, "blaze_face_short_range.tflite")
+SFACE_MODEL_PATH = os.path.join(MODEL_DIR, "face_recognition_sface_2021dec.onnx")
+SFACE_MODEL_URL = (
+    "https://github.com/opencv/opencv_zoo/raw/refs/heads/main/models/"
+    "face_recognition_sface/face_recognition_sface_2021dec.onnx"
+)
 
 # Global singleton models
 _landmarker_instance = None
 _landmarker_initialized = False
 _detector_instance = None
 _detector_initialized = False
+_face_recognizer = None
+_face_recognizer_initialized = False
 
 
 def _get_landmarker():
@@ -106,6 +113,31 @@ def _get_detector():
         _detector_initialized = True
         _detector_instance = None
         return None
+
+
+def _get_face_recognizer():
+    """Load OpenCV Zoo SFace, downloading its Apache-2.0 model on first use."""
+    global _face_recognizer, _face_recognizer_initialized
+    if _face_recognizer_initialized:
+        return _face_recognizer
+    _face_recognizer_initialized = True
+    try:
+        if not os.path.exists(SFACE_MODEL_PATH):
+            os.makedirs(MODEL_DIR, exist_ok=True)
+            import urllib.request
+            temporary_path = SFACE_MODEL_PATH + ".download"
+            log.info("Downloading SFace recognition model from OpenCV Zoo...")
+            urllib.request.urlretrieve(SFACE_MODEL_URL, temporary_path)
+            if os.path.getsize(temporary_path) < 1_000_000:
+                os.remove(temporary_path)
+                raise RuntimeError("Downloaded SFace model is incomplete")
+            os.replace(temporary_path, SFACE_MODEL_PATH)
+        _face_recognizer = cv2.FaceRecognizerSF_create(SFACE_MODEL_PATH, "")
+        log.info("SFace identity recognition model initialized.")
+    except Exception as exc:
+        log.exception("Could not initialize SFace identity model: %s", exc)
+        _face_recognizer = None
+    return _face_recognizer
 
 
 def is_available() -> bool:
@@ -338,12 +370,42 @@ def extract_geometry_embedding(landmarks, blendshapes=None) -> np.ndarray:
 
 
 def extract_biometric_embedding(landmarks, blendshapes=None, rgb_img: Optional[np.ndarray] = None) -> np.ndarray:
-    """Fused appearance + geometry template. Appearance carries identity across photo vs webcam."""
-    geom = extract_geometry_embedding(landmarks, blendshapes)
-    if rgb_img is None:
-        return geom
-    app = extract_appearance_embedding(rgb_img, landmarks)
-    return np.concatenate([app, geom]).astype(np.float32)
+    """Create a learned SFace identity embedding; fail closed if the model is unavailable."""
+    if rgb_img is None or len(landmarks) <= 362:
+        raise RuntimeError("A full face image and landmarks are required for identity matching")
+    recognizer = _get_face_recognizer()
+    if recognizer is None:
+        raise RuntimeError("SFace model unavailable. Check network access and restart the server to retry.")
+
+    h, w = rgb_img.shape[:2]
+    pts = np.array([[float(lm.x) * w, float(lm.y) * h] for lm in landmarks], dtype=np.float32)
+    x1, y1 = np.floor(pts.min(axis=0)).astype(int)
+    x2, y2 = np.ceil(pts.max(axis=0)).astype(int)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w - 1, x2), min(h - 1, y2)
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("Invalid face bounds for SFace alignment")
+
+    def eye_center(a, b):
+        pa = np.array([landmarks[a].x * w, landmarks[a].y * h], dtype=np.float32)
+        pb = np.array([landmarks[b].x * w, landmarks[b].y * h], dtype=np.float32)
+        return (pa + pb) * 0.5
+
+    five = [
+        eye_center(33, 133), eye_center(362, 263),
+        np.array([landmarks[1].x * w, landmarks[1].y * h], dtype=np.float32),
+        np.array([landmarks[61].x * w, landmarks[61].y * h], dtype=np.float32),
+        np.array([landmarks[291].x * w, landmarks[291].y * h], dtype=np.float32),
+    ]
+    # OpenCV FaceRecognizerSF takes [x,y,w,h, five (x,y) landmarks, score].
+    face_row = np.array([[x1, y1, x2 - x1, y2 - y1, *np.concatenate(five), 1.0]], dtype=np.float32)
+    bgr = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+    aligned = recognizer.alignCrop(bgr, face_row)
+    feature = np.asarray(recognizer.feature(aligned), dtype=np.float32).flatten()
+    norm = np.linalg.norm(feature)
+    if feature.size != 128 or norm <= 1e-9:
+        raise RuntimeError("SFace returned an invalid identity embedding")
+    return feature / norm
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -369,7 +431,17 @@ def compute_biometric_similarity(emb_live: np.ndarray, emb_ref: np.ndarray) -> f
     if emb_live.size != emb_ref.size:
         return 0.0
 
-    if emb_live.size >= APP_DIM:
+    if emb_live.size == 128:
+        # OpenCV Zoo SFace's documented cosine operating point is 0.363.
+        # Map that decision boundary to the app's existing 85% threshold while
+        # keeping the displayed score a similarity scale, not a probability.
+        cosine = _cosine(emb_live, emb_ref)
+        if cosine >= 0.363:
+            score = 0.85 + (cosine - 0.363) * (0.145 / (1.0 - 0.363))
+        else:
+            score = 0.12 + (cosine + 1.0) * (0.73 / (0.363 + 1.0))
+        return float(np.clip(score, 0.0, 0.995))
+    elif emb_live.size >= APP_DIM:
         live_app, ref_app = emb_live[:APP_DIM], emb_ref[:APP_DIM]
         live_geom, ref_geom = emb_live[APP_DIM:], emb_ref[APP_DIM:]
 
@@ -1053,8 +1125,22 @@ def process_face_image(
             "details": analysis,
         }
 
-    # Extract live 3D biometric embedding vector
-    live_embedding = extract_biometric_embedding(landmarks, blendshapes, rgb_img)
+    # SFace is the identity matcher; fail as an analysis result if its model is unavailable.
+    try:
+        live_embedding = extract_biometric_embedding(landmarks, blendshapes, rgb_img)
+    except Exception as exc:
+        log.exception("Could not create SFace live identity embedding")
+        return {
+            "face_detected": True,
+            "liveness_score": liveness_score,
+            "liveness_passed": True,
+            "match_score": None,
+            "match_passed": False,
+            "enrolled": False,
+            "num_faces": num_faces,
+            "message": f"Face identity analysis unavailable: {exc}",
+            "details": analysis,
+        }
 
     # 1. Fetch reference template from session (uploaded passport/Aadhaar)
     enrolled_encoding = None
@@ -1091,7 +1177,9 @@ def process_face_image(
     if enrolled_encoding is not None:
         # Match only vectors produced by the same descriptor version. A legacy
         # landmark-only template cannot be compared with the current appearance vector.
-        compatible_template = enrolled_encoding.size == live_embedding.size and enrolled_encoding.size >= APP_DIM
+        compatible_template = enrolled_encoding.size == live_embedding.size and (
+            enrolled_encoding.size == 128 or enrolled_encoding.size >= APP_DIM
+        )
         calibrated_score = (
             compute_biometric_similarity(live_embedding, enrolled_encoding)
             if compatible_template else 0.0
