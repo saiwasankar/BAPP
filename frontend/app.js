@@ -604,7 +604,7 @@ function renderSession() {
     ['Kiosk / Gate', `${s.kiosk_id} / ${s.gate_id || '—'}`],
     ['Attempts', `${s.attempts} / ${s.max_attempts}`],
     ['Liveness Score', s.liveness_score !== null ? s.liveness_score.toFixed(4) : '—'],
-    ['Match Score', s.match_score !== null ? s.match_score.toFixed(4) : '—'],
+    ['Face Similarity Score', s.match_score !== null ? s.match_score.toFixed(4) : '—'],
     ['Match Passed', s.match_passed !== null ? (s.match_passed ? 'Yes' : 'No') : '—'],
     ['Passport Attached', s.passport_photo_b64 ? 'Portrait Extracted ✓' : 'Standard'],
     ['Immigration', s.immigration_status || '—'],
@@ -649,7 +649,8 @@ function renderSession() {
       return `<div class="attempt-entry attempt-entry--${cls}">
         <span class="attempt-entry__num">#${a.attempt_number}</span>
         <span>Liveness: ${a.liveness_passed ? '✓' : '✗'} (${a.liveness_score !== null ? (a.liveness_score * 100).toFixed(1) + '%' : '—'})</span>
-        <span>Match: ${a.match_passed === true ? '✓ MATCH' : a.match_passed === false ? '✗ MISMATCH' : '—'} (${a.match_score !== null ? (a.match_score * 100).toFixed(1) + '%' : '—'})</span>
+        <span>Identity check: ${a.match_passed === true ? '✓ MATCH' : a.match_passed === false ? '✗ MISMATCH' : '—'}</span>
+        <span>Face similarity score: ${a.match_score !== null ? (a.match_score * 100).toFixed(1) + '%' : '—'}</span>
         ${engineTag}
         <span class="badge badge--${cls === 'pass' ? 'green' : cls === 'escalated' ? 'amber' : 'red'}">${a.outcome}</span>
         <span class="muted">${a.attempts_remaining} remaining</span>
@@ -916,12 +917,13 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
     if (a.match_passed) {
       verdictBanner.className = 'match-verdict-banner match-verdict-banner--success';
       verdictBanner.innerHTML = `
-        <strong>✓ BIOMETRIC MATCH VERIFIED (${matchPct})</strong><br>
+        <strong>✓ BIOMETRIC MATCH VERIFIED</strong><br>
         Live facial scan matches the uploaded passport photo.<br>
+        <span style="font-size:0.75rem;opacity:0.9;">Face similarity score: ${matchPct}</span><br>
         <span style="font-size:0.75rem;opacity:0.9;">Liveness: ${livenessPct} · 478 3D Landmarks verified · Identity Confirmed</span>
         ${faceAnalysisHtml(a)}
       `;
-      toast(`✓ Biometric Verified! Match Confidence: ${matchPct}`, 'success');
+      toast(`✓ Biometric Verified! Face similarity score: ${matchPct}`, 'success');
       setTimeout(() => {
         closeCameraModal();
         renderSession();
@@ -947,12 +949,13 @@ document.getElementById('btn-modal-capture').addEventListener('click', async () 
       // MISMATCH: State clearly with exact score
       verdictBanner.className = 'match-verdict-banner match-verdict-banner--mismatch';
       verdictBanner.innerHTML = `
-        <strong>✗ BIOMETRIC MISMATCH DETECTED (${matchPct} < 85.0%)</strong><br>
+        <strong>✗ BIOMETRIC MISMATCH DETECTED</strong><br>
         The live facial scan DOES NOT MATCH the uploaded passport photo.<br>
+        <span style="font-size:0.75rem;opacity:0.9;">Face similarity score: ${matchPct} · Required threshold: 85.0%</span><br>
         <span style="font-size:0.75rem;opacity:0.9;">Attempt ${a.attempt_number} of 3 · ${a.attempts_remaining} attempts remaining</span>
         ${faceAnalysisHtml(a)}
       `;
-      toast(`✗ Biometric Mismatch (${matchPct}): Live face does not match passport.`, 'error');
+      toast(`✗ Biometric Mismatch. Face similarity score: ${matchPct}`, 'error');
       if (a.outcome === 'ESCALATED') {
         toast('Max biometric attempts exhausted — Session escalated to immigration officer.', 'error');
         setTimeout(() => {
@@ -1199,7 +1202,7 @@ async function loadReviews() {
           <div class="review-card__field"><span class="review-card__label">Passport:</span> <code>${escHtml(r.passport_number)}</code></div>
           <div class="review-card__field"><span class="review-card__label">Kiosk / Gate:</span> ${escHtml(r.kiosk_id)} / ${escHtml(r.gate_id || '—')}</div>
           <div class="review-card__field"><span class="review-card__label">Liveness:</span> ${r.liveness_score !== null ? (r.liveness_score * 100).toFixed(1) + '%' : '—'}</div>
-          <div class="review-card__field"><span class="review-card__label">Match Score:</span> ${r.match_score !== null ? (r.match_score * 100).toFixed(1) + '%' : '—'}</div>
+          <div class="review-card__field"><span class="review-card__label">Face Similarity Score:</span> ${r.match_score !== null ? (r.match_score * 100).toFixed(1) + '%' : '—'}</div>
           <div class="review-card__field"><span class="review-card__label">Watchlist Hit:</span> ${r.watchlist_hit ? `Yes (${r.watchlist_risk})` : 'No'}</div>
           <div class="review-card__field"><span class="review-card__label">Entry Permitted:</span> ${r.entry_permitted !== null ? (r.entry_permitted ? 'Yes' : 'No') : '—'}</div>
           <div class="review-card__field"><span class="review-card__label">Issues:</span> ${(r.document_issues || []).join(', ') || 'None'}</div>
@@ -1229,7 +1232,7 @@ window.openOverrideModal = async function(sessionId) {
       <div class="session-info__item"><span class="session-info__label">Passport</span><span class="session-info__value">${escHtml(s.passport_number)}</span></div>
       <div class="session-info__item"><span class="session-info__label">Escalation Reason</span><span class="session-info__value" style="color:var(--amber);font-weight:600;">${escHtml(s.escalation_reason || '—')}</span></div>
       <div class="session-info__item"><span class="session-info__label">Document Issues</span><span class="session-info__value">${(s.document_issues || []).join(', ') || 'None'}</span></div>
-      <div class="session-info__item"><span class="session-info__label">Match Score</span><span class="session-info__value">${s.match_score !== null ? (s.match_score * 100).toFixed(1) + '%' : '—'}</span></div>
+      <div class="session-info__item"><span class="session-info__label">Face Similarity Score</span><span class="session-info__value">${s.match_score !== null ? (s.match_score * 100).toFixed(1) + '%' : '—'}</span></div>
       <div class="session-info__item"><span class="session-info__label">Watchlist</span><span class="session-info__value">${s.watchlist_hit ? `HIT: ${s.watchlist_risk}` : 'Clear'}</span></div>
     `;
     document.getElementById('override-notes').value = '';
