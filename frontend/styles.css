@@ -6,33 +6,33 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Core palette — authoritative, low-saturation */
-  --navy:         #1B2A4A;
-  --navy-dark:    #111D35;
-  --slate:        #334155;
-  --slate-light:  #475569;
-  --gray-100:     #F1F5F9;
-  --gray-200:     #E2E8F0;
-  --gray-300:     #CBD5E1;
+  /* Core palette — dark institutional surfaces */
+  --navy:         #1E293B;
+  --navy-dark:    #0F172A;
+  --slate:        #CBD5E1;
+  --slate-light:  #AAB8CA;
+  --gray-100:     #111827;
+  --gray-200:     #273449;
+  --gray-300:     #3B4A60;
   --gray-400:     #94A3B8;
-  --gray-500:     #64748B;
-  --gray-600:     #475569;
-  --gray-800:     #1E293B;
-  --white:        #FFFFFF;
+  --gray-500:     #9AAAC0;
+  --gray-600:     #B7C3D3;
+  --gray-800:     #E2E8F0;
+  --white:        #182335;
 
   /* Status colours — muted, not neon */
-  --green:        #16A34A;
-  --green-bg:     #F0FDF4;
-  --green-border: #BBF7D0;
-  --amber:        #CA8A04;
-  --amber-bg:     #FEFCE8;
-  --amber-border: #FEF08A;
-  --red:          #DC2626;
-  --red-bg:       #FEF2F2;
-  --red-border:   #FECACA;
-  --blue:         #2563EB;
-  --blue-bg:      #EFF6FF;
-  --blue-border:  #BFDBFE;
+  --green:        #4ADE80;
+  --green-bg:     #14291F;
+  --green-border: #28583A;
+  --amber:        #FBBF24;
+  --amber-bg:     #302817;
+  --amber-border: #655022;
+  --red:          #F87171;
+  --red-bg:       #321C22;
+  --red-border:   #69313B;
+  --blue:         #7CB7FF;
+  --blue-bg:      #17283E;
+  --blue-border:  #2C4E77;
 
   /* Typography */
   --font:         'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -45,13 +45,13 @@
 html { font-size: 14px; }
 body {
   font-family: var(--font);
-  background: var(--gray-100);
+  background: #0B1220;
   color: var(--gray-800);
   line-height: 1.5;
   min-height: 100vh;
 }
 
-h1 { font-size: 1.35rem; font-weight: 700; color: var(--navy); }
+h1 { font-size: 1.35rem; font-weight: 700; color: #F1F5F9; }
 h2 { font-size: 1.05rem; font-weight: 600; color: var(--slate); }
 h3 { font-size: 0.95rem; font-weight: 600; color: var(--slate-light); margin-bottom: 8px; }
 
@@ -137,8 +137,8 @@ a:hover { text-decoration: underline; }
 }
 .nav-tab:hover { color: var(--navy); }
 .nav-tab--active {
-  color: var(--navy);
-  border-bottom-color: var(--navy);
+  color: #F1F5F9;
+  border-bottom-color: var(--blue);
   font-weight: 600;
 }
 .nav-tab__icon { width: 16px; height: 16px; flex-shrink: 0; }
@@ -225,7 +225,7 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--gray-200);
   vertical-align: top;
 }
-.data-table tbody tr:hover { background: #F8FAFC; }
+.data-table tbody tr:hover { background: #202D40; }
 .data-table--compact td,
 .data-table--compact th { padding: 6px 10px; font-size: 0.8rem; }
 
