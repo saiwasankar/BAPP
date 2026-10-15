@@ -111,3 +111,38 @@ app/
   routers/           passengers.py, egate.py, immigration.py, admin.py
 smoke_test.py        end-to-end test of every scenario
 ```
+
+## CI/CD assignment: Jenkins, Docker Hub, and Minikube
+
+The repository includes a declarative `Jenkinsfile`, a production-style `Dockerfile`, and Kubernetes manifests in `k8s/`. The pipeline checks out the configured GitHub branch, compiles the Python app, runs the existing end-to-end smoke test, builds and pushes an image tagged with the commit SHA, applies the manifests to Minikube, and checks the rollout and `/api/health` endpoint.
+
+### One-time setup
+
+1. Use the GitHub repository `https://github.com/saiwasankar/CI-CD.git` and create a **public** Docker Hub repository named `bapps/cicd`.
+2. On the AWS EC2 instance, install Jenkins, Git, Python 3, Docker, `kubectl`, Minikube, and `curl`. Configure Minikube with the Docker driver and make sure the Jenkins service account can access both the Docker socket and the same Minikube cluster/context. Start Minikube and keep it running. Jenkins and Minikube must run on the same EC2 host for this pipeline configuration.
+3. Install Jenkins plugins: **Pipeline**, **Git**, and **Workspace Cleanup**. The job uses `cleanWs()` after each run.
+4. In Jenkins **Manage Jenkins → Credentials**, add a username/password credential with ID `dockerhub-credentials`. Use your Docker Hub username and an access token as the password.
+5. The Jenkinsfile and Deployment manifest are set to `docker.io/bapps/cicd`. Keep the Docker Hub repository public so Minikube can pull images without a separate registry pull secret.
+6. Create a **Pipeline** job, select **Pipeline script from SCM**, choose Git, enter `https://github.com/saiwasankar/CI-CD.git`, and set the branch to `*/main` and script path to `Jenkinsfile`. Save and run **Build Now**. Configure a GitHub webhook or a periodic SCM poll if you want pushes to trigger builds automatically.
+
+The Docker Hub repository is public so Minikube can pull the pushed image without a registry secret. Keep the credential only in Jenkins; never put the token in this repository.
+
+### Pipeline stages and manual deployment checks
+
+- **Checkout** records the checked-out commit and uses its short SHA as the immutable image tag.
+- **Build and test** installs `requirements.txt`, compiles `app/`, and runs `smoke_test.py` against its temporary database.
+- **Build image / Push image** builds the Docker image and publishes it to Docker Hub using the Jenkins credential.
+- **Deploy to Minikube** creates the namespace and persistent volume claim, applies the Deployment and Service, updates the Deployment to the new image, then waits for rollout.
+- **Verify deployment** lists the Kubernetes resources and calls `/api/health` through a temporary port-forward.
+
+For screenshots and the live demo, capture the passing Jenkins build stages and run these commands on the EC2 host after a successful build:
+
+```bash
+kubectl get deployment,pods,service -n bapps
+kubectl rollout status deployment/bapps-backend -n bapps
+minikube service bapps-backend -n bapps --url
+```
+
+Open the URL printed by the last command and add `/` for the UI or `/docs` for the API docs. To demonstrate the required second deployment, make a small visible source change (for example, update the API version in `app/main.py`), commit and push it to the configured branch, then show the subsequent Jenkins build using the new commit tag and the updated rollout. Record screenshots from both successful runs for submission.
+
+The Minikube/PVC setup is intended for this academic demonstration. The application is an unauthenticated prototype; do not expose it to the public internet or use real passenger data.

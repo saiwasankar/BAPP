@@ -1,0 +1,11 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
+tmp/
+resume_similarity_analyzer/
+BAPPS_Assignment_Writeups/
