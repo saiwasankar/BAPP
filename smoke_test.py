@@ -151,14 +151,15 @@ def run() -> None:
         o = override(client, s["session_id"], "OFF-001", False, "Passport expired; passenger redirected to renew.")
         check(o.json()["session"]["state"] == "DENIED", "officer denies after manual document review")
 
-        print("\n[6] P-1006 Sofia Alvarez: face mismatch -> officer approves")
+        print("\n[6] P-1006 Sofia Alvarez: repeated face mismatch -> officer approves")
         sid = scan(client, passport_number="E6618240").json()["session_id"]
-        f = face(client, sid).json()["attempt"]
-        check(f["outcome"] == "FACE_VERIFIED" and f["match_passed"] is False and f["match_score"] < 0.85,
-              f"live face fails match (score {f['match_score']})")
-        checks(client, sid)
-        d = decide(client, sid).json()
-        check(d["reasons"] == ["FACE_MATCH_BELOW_THRESHOLD"], "escalated with FACE_MATCH_BELOW_THRESHOLD")
+        attempts = [face(client, sid).json()["attempt"] for _ in range(3)]
+        check([attempt["outcome"] for attempt in attempts] == ["RETRY", "RETRY", "ESCALATED"],
+              "three face mismatches escalate to officer review")
+        session = client.get(f"/api/egate/sessions/{sid}").json()
+        check(session["state"] == "AWAITING_OFFICER"
+              and session["escalation_reason"] == "FACE_MATCH_RETRIES_EXHAUSTED",
+              "face mismatch retry limit moves session to officer review")
         o = override(client, sid, "OFF-002", True, "Identity confirmed against passport photo in person.")
         check(o.json()["authorized"] is True and o.json()["session"]["decision"] == "OFFICER_APPROVED",
               "officer approval opens gate")
