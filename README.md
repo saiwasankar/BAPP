@@ -118,11 +118,11 @@ The repository includes a declarative `Jenkinsfile`, a production-style `Dockerf
 
 ### One-time setup
 
-1. Use the GitHub repository `https://github.com/saiwasankar/CI-CD.git` and create a **public** Docker Hub repository named `bapps/cicd`.
+1. Use the GitHub repository `https://github.com/saiwasankar/CI-CD.git` and create a **public** Docker Hub repository named `saiw27/cicd`.
 2. On the AWS EC2 instance, install Jenkins, Git, Python 3, Docker, `kubectl`, Minikube, and `curl`. Configure Minikube with the Docker driver and make sure the Jenkins service account can access both the Docker socket and the same Minikube cluster/context. Start Minikube and keep it running. Jenkins and Minikube must run on the same EC2 host for this pipeline configuration.
 3. Install Jenkins plugins: **Pipeline**, **Git**, and **Workspace Cleanup**. The job uses `cleanWs()` after each run.
 4. In Jenkins **Manage Jenkins → Credentials**, add a username/password credential with ID `dockerhub-credentials`. Use your Docker Hub username and an access token as the password.
-5. The Jenkinsfile and Deployment manifest are set to `docker.io/bapps/cicd`. Keep the Docker Hub repository public so Minikube can pull images without a separate registry pull secret.
+5. The Jenkinsfile and Deployment manifest are set to `docker.io/saiw27/cicd`. Keep the Docker Hub repository public so Minikube can pull images without a separate registry pull secret.
 6. Create a **Pipeline** job, select **Pipeline script from SCM**, choose Git, enter `https://github.com/saiwasankar/CI-CD.git`, and set the branch to `*/main` and script path to `Jenkinsfile`. Save and run **Build Now**. Configure a GitHub webhook or a periodic SCM poll if you want pushes to trigger builds automatically.
 
 The Docker Hub repository is public so Minikube can pull the pushed image without a registry secret. Keep the credential only in Jenkins; never put the token in this repository.

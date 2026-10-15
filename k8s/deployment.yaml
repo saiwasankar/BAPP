@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: docker.io/bapps/cicd:latest
+          image: docker.io/saiw27/cicd:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

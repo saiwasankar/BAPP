@@ -8,7 +8,7 @@ pipeline {
     }
 
     environment {
-        IMAGE_REPOSITORY = 'docker.io/bapps/cicd'
+        IMAGE_REPOSITORY = 'docker.io/saiw27/cicd'
         K8S_NAMESPACE = 'bapps'
         K8S_DEPLOYMENT = 'bapps-backend'
         K8S_CONTAINER = 'api'
