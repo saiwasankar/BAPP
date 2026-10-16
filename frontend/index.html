@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="BAPPS - Biometric Aviation Passenger Processing System. Government border control e-gate management interface.">
   <title>BAPPS — Border Control Terminal</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem('bapps-theme') || 'light';
+    } catch (_) {
+      document.documentElement.dataset.theme = 'light';
+    }
+  </script>
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +39,10 @@
         <span class="status-dot status-dot--offline"></span>
         Connecting…
       </span>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark mode">
+        <span class="theme-toggle__icon" aria-hidden="true">☾</span>
+        <span class="theme-toggle__label">Dark mode</span>
+      </button>
       <span class="top-bar__clock" id="header-clock">--:--:--</span>
     </div>
   </header>

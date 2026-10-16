@@ -1422,6 +1422,29 @@ document.getElementById('btn-reset-db').addEventListener('click', async () => {
 // ══════════════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════════════
+(function initThemeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById('theme-toggle');
+  if (!button) return;
+
+  const syncButton = () => {
+    const dark = root.dataset.theme === 'dark';
+    button.innerHTML = dark
+      ? '<span class="theme-toggle__icon" aria-hidden="true">☀</span><span class="theme-toggle__label">Light mode</span>'
+      : '<span class="theme-toggle__icon" aria-hidden="true">☾</span><span class="theme-toggle__label">Dark mode</span>';
+    button.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+    button.setAttribute('aria-pressed', String(dark));
+  };
+
+  syncButton();
+  button.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('bapps-theme', next); } catch (_) { /* Theme still changes for this page. */ }
+    syncButton();
+  });
+})();
+
 (async function init() {
   const ok = await checkHealth();
   if (ok) {
