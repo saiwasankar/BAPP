@@ -807,6 +807,100 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     "message": "Aadhaar / ID portrait localized from document photo region."
                 }
 
+    # Stage D: OpenCV Haar fallback for small printed ID portraits. BlazeFace
+    # can miss these when the document is a full-page scan. Keep the detector
+    # coordinates attached to the exact resized region, crop around the face,
+    # and require FaceLandmarker to confirm the crop before creating an
+    # identity embedding. This prevents a whole-document image from silently
+    # becoming the reference portrait.
+    try:
+        cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        if not face_cascade.empty():
+            haar_candidates = []
+            for current_img in candidates:
+                cw, ch = current_img.size
+                windows = [
+                    (0, 0, cw, ch),
+                    (0, 0, int(cw * 0.58), ch),
+                    (int(cw * 0.42), 0, cw, ch),
+                ]
+                for wx1, wy1, wx2, wy2 in windows:
+                    region = current_img.crop((wx1, wy1, wx2, wy2))
+                    rw, rh = region.size
+                    if min(rw, rh) < 40:
+                        continue
+                    factor = min(2.0, 1800.0 / max(rw, rh))
+                    sw, sh = max(1, round(rw * factor)), max(1, round(rh * factor))
+                    scaled = region.resize((sw, sh), Image.Resampling.LANCZOS) if factor != 1.0 else region
+                    gray = cv2.cvtColor(np.array(scaled), cv2.COLOR_RGB2GRAY)
+                    gray = cv2.equalizeHist(gray)
+                    faces = face_cascade.detectMultiScale(
+                        gray, scaleFactor=1.05, minNeighbors=5,
+                        minSize=(22, 22), flags=cv2.CASCADE_SCALE_IMAGE,
+                    )
+                    for fx, fy, fw, fh in faces:
+                        area_ratio = (fw * fh) / max(1, sw * sh)
+                        # Skip implausibly tiny specks and page-sized false hits.
+                        if not 0.0005 <= area_ratio <= 0.35:
+                            continue
+                        # Prefer the most prominent plausible portrait in its
+                        # local card region while avoiding the entire document.
+                        rank = min(area_ratio, 0.12) - max(0.0, area_ratio - 0.20)
+                        haar_candidates.append((rank, current_img, wx1, wy1, fx, fy, fw, fh, factor))
+
+            for _, current_img, wx1, wy1, fx, fy, fw, fh, factor in sorted(
+                haar_candidates, key=lambda item: item[0], reverse=True
+            ):
+                cw, ch = current_img.size
+                face_x, face_y = wx1 + fx / factor, wy1 + fy / factor
+                face_w, face_h = fw / factor, fh / factor
+                mx, my = face_w * 0.38, face_h * 0.48
+                x1 = max(0, int(face_x - mx))
+                y1 = max(0, int(face_y - my))
+                x2 = min(cw, int(face_x + face_w + mx))
+                y2 = min(ch, int(face_y + face_h + my))
+                if x2 - x1 < 32 or y2 - y1 < 32:
+                    continue
+
+                portrait = current_img.crop((x1, y1, x2, y2))
+                portrait_rgb = np.array(portrait)
+                portrait_result = None
+                if landmarker:
+                    portrait_result = landmarker.detect(
+                        mp.Image(image_format=mp.ImageFormat.SRGB, data=portrait_rgb)
+                    )
+                    if not (portrait_result and portrait_result.face_landmarks):
+                        # Printed photos may be only a few dozen pixels wide;
+                        # enlarge the isolated portrait without changing its
+                        # aspect ratio before the confirming landmark pass.
+                        scale_up = max(1.0, min(4.0, 640.0 / max(portrait.size)))
+                        enlarged = portrait.resize(
+                            (max(1, round(portrait.width * scale_up)),
+                             max(1, round(portrait.height * scale_up))),
+                            Image.Resampling.LANCZOS,
+                        )
+                        portrait_rgb = np.array(enlarged)
+                        portrait_result = landmarker.detect(
+                            mp.Image(image_format=mp.ImageFormat.SRGB, data=portrait_rgb)
+                        )
+                if portrait_result and portrait_result.face_landmarks:
+                    landmarks = portrait_result.face_landmarks[0]
+                    embedding = extract_biometric_embedding(landmarks, None, portrait_rgb)
+                    display_crop = _crop_landmark_portrait(
+                        Image.fromarray(portrait_rgb), landmarks
+                    )
+                    display_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    return {
+                        "face_detected": True,
+                        "landmarks_count": len(landmarks),
+                        "embedding": embedding.tolist(),
+                        "face_thumbnail_b64": encode_image_to_base64(display_crop),
+                        "message": "Small document portrait isolated and confirmed successfully.",
+                    }
+    except Exception as exc:
+        log.warning("Small document portrait fallback failed: %s", exc)
+
     if landmark_fallback:
         # A whole-page detector result is not a portrait crop. Avoid accepting
         # that fallback for any full-page ID scan; the user should recapture the
@@ -821,7 +915,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
 
     return {
         "face_detected": False,
-        "message": "No clear facial portrait detected in the uploaded document. Please upload a clear photo or document containing a visible face."
+        "message": "Could not isolate a clear face portrait from this document. Upload a sharper, closer image of the document side that contains the photo."
     }
 
 
