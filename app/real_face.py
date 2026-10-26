@@ -560,6 +560,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
         candidates.append(pil_img.rotate(angle, expand=True))
 
     w_orig, h_orig = pil_img.size
+    landmark_fallback = None
 
     for current_img in candidates:
         cw, ch = current_img.size
@@ -587,12 +588,16 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     face_thumbnail_b64 = encode_image_to_base64(face_crop)
                     embedding = extract_biometric_embedding(landmarks, blendshapes, curr_rgb)
 
-                    return {
+                    # Keep this as a fallback rather than returning immediately.
+                    # On dense ID scans, the full-page landmarker can produce a
+                    # loose crop; the detector passes below localize the printed
+                    # portrait more tightly.
+                    landmark_fallback = {
                         "face_detected": True,
                         "landmarks_count": len(landmarks),
                         "embedding": embedding.tolist(),
                         "face_thumbnail_b64": face_thumbnail_b64,
-                        "message": "Document face portrait extracted successfully."
+                        "message": "Document face portrait extracted using facial landmarks."
                     }
         except Exception:
             pass
@@ -738,6 +743,9 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     "face_thumbnail_b64": face_thumbnail_b64,
                     "message": "Aadhaar / ID portrait localized from document photo region."
                 }
+
+    if landmark_fallback:
+        return landmark_fallback
 
     return {
         "face_detected": False,
