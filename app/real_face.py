@@ -540,6 +540,80 @@ def _synthesize_landmarks_from_detection(det, img_w: int, img_h: int) -> List[Ps
     return lms
 
 
+def _extract_haar_portrait(image: Image.Image, landmarker, mp) -> Optional[Dict[str, Any]]:
+    """Find a small printed portrait with Haar, then require mesh confirmation."""
+    try:
+        cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+        cascade = cv2.CascadeClassifier(cascade_path)
+        if cascade.empty():
+            return None
+        width, height = image.size
+        candidates = []
+        for left, top, right, bottom in (
+            (0, 0, width, height),
+            (0, 0, int(width * 0.60), height),
+            (int(width * 0.40), 0, width, height),
+        ):
+            region = image.crop((left, top, right, bottom))
+            scale = min(3.0, 1800.0 / max(region.size))
+            sw, sh = max(1, round(region.width * scale)), max(1, round(region.height * scale))
+            enlarged = region.resize((sw, sh), Image.Resampling.LANCZOS) if scale != 1.0 else region
+            gray = cv2.equalizeHist(cv2.cvtColor(np.array(enlarged), cv2.COLOR_RGB2GRAY))
+            boxes = cascade.detectMultiScale(
+                gray, scaleFactor=1.05, minNeighbors=4, minSize=(18, 18),
+                flags=cv2.CASCADE_SCALE_IMAGE,
+            )
+            for fx, fy, fw, fh in boxes:
+                face_x, face_y = left + fx / scale, top + fy / scale
+                face_w, face_h = fw / scale, fh / scale
+                candidates.append((fw * fh, face_x, face_y, face_w, face_h))
+
+        for _, face_x, face_y, face_w, face_h in sorted(candidates, reverse=True):
+            # Keep the full ID photo with a little shoulder/background margin.
+            mx, my = face_w * 0.20, face_h * 0.35
+            x1, y1 = max(0, int(face_x - mx)), max(0, int(face_y - my))
+            x2 = min(width, int(face_x + face_w + mx))
+            y2 = min(height, int(face_y + face_h + my))
+            if x2 <= x1 or y2 <= y1:
+                continue
+            photo = image.crop((x1, y1, x2, y2))
+            if photo.width * photo.height / max(1, width * height) > 0.20:
+                continue
+
+            analysis_image = photo
+            face_result = landmarker.detect(
+                mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(analysis_image))
+            ) if landmarker else None
+            if not (face_result and face_result.face_landmarks):
+                up_scale = max(1.0, min(4.0, 640.0 / max(photo.size)))
+                analysis_image = photo.resize(
+                    (max(1, round(photo.width * up_scale)), max(1, round(photo.height * up_scale))),
+                    Image.Resampling.LANCZOS,
+                )
+                face_result = landmarker.detect(
+                    mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(analysis_image))
+                ) if landmarker else None
+            if not (face_result and face_result.face_landmarks):
+                continue
+
+            rgb = np.array(analysis_image)
+            landmarks = face_result.face_landmarks[0]
+            embedding = extract_biometric_embedding(landmarks, None, rgb)
+            preview = photo.copy()
+            preview.thumbnail((240, 300), Image.Resampling.LANCZOS)
+            return {
+                "face_detected": True,
+                "landmarks_count": len(landmarks),
+                "embedding": embedding.tolist(),
+                "face_thumbnail_b64": encode_image_to_base64(preview),
+                "crop_area_ratio": (photo.width * photo.height) / max(1, width * height),
+                "message": "Face portrait detected and confirmed in the document photo.",
+            }
+    except Exception as exc:
+        log.warning("Haar portrait extraction failed: %s", exc)
+    return None
+
+
 def _crop_landmark_portrait(image: Image.Image, landmarks) -> Image.Image:
     """Return a tight head-and-shoulders reference crop from normalized landmarks."""
     width, height = image.size
@@ -658,6 +732,12 @@ def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
                         }
         except Exception:
             pass
+
+        # Prefer a photo-card crop confirmed as a face before the broader
+        # document detector scans logos, QR marks, and text-heavy regions.
+        haar_portrait = _extract_haar_portrait(current_img, landmarker, mp)
+        if haar_portrait:
+            return haar_portrait
 
         # Stage B: BlazeFace Detector for ID Card Photo Crops (Aadhaar / National ID)
         if detector:
