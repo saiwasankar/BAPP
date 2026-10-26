@@ -490,6 +490,10 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
     const portraitStatus = document.getElementById('passport-status-text');
     const statusDot = document.querySelector('#passport-file-status .status-dot');
     if (session.passport_photo_b64) {
+      // Show the crop returned by the backend so the operator can confirm the
+      // actual portrait used for matching, while retaining the source upload
+      // in uploadedPassportB64 for any later rescan.
+      document.getElementById('passport-preview-img').src = session.passport_photo_b64;
       portraitStatus.textContent = 'Face portrait extracted successfully';
       statusDot.className = 'status-dot status-dot--online';
     } else {
