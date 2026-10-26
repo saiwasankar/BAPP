@@ -695,6 +695,9 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     lm_count = len(landmarks)
                 else:
                     synth_lms = _synthesize_landmarks_from_detection(best_det, det_img.size[0], det_img.size[1])
+                    portrait_crop = _crop_landmark_portrait(det_img, synth_lms)
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
                     lm_count = len(synth_lms)
 
@@ -764,6 +767,9 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
                 else:
                     synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
+                    portrait_crop = _crop_landmark_portrait(Image.fromarray(det_rgb), synth_lms)
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
 
                 return {
