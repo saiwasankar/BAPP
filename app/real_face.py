@@ -540,6 +540,38 @@ def _synthesize_landmarks_from_detection(det, img_w: int, img_h: int) -> List[Ps
     return lms
 
 
+def _crop_landmark_portrait(image: Image.Image, landmarks) -> Image.Image:
+    """Return a tight head-and-shoulders reference crop from normalized landmarks."""
+    width, height = image.size
+
+    def point(index: int) -> Tuple[float, float]:
+        lm = landmarks[min(index, len(landmarks) - 1)]
+        return float(lm.x) * width, float(lm.y) * height
+
+    left_eye = point(33)
+    right_eye = point(263)
+    eye_cx = (left_eye[0] + right_eye[0]) / 2.0
+    eye_y = (left_eye[1] + right_eye[1]) / 2.0
+    eye_span = max(1.0, math.dist(left_eye, right_eye))
+    left_cheek = point(234)
+    right_cheek = point(454)
+    cheek_span = abs(right_cheek[0] - left_cheek[0])
+    chin_y = point(152)[1]
+    forehead_y = point(10)[1]
+
+    face_width = max(eye_span * 2.35, cheek_span * 1.15)
+    x1 = int(eye_cx - face_width * 0.62)
+    x2 = int(eye_cx + face_width * 0.62)
+    y1 = int(min(forehead_y - eye_span * 0.18, eye_y - eye_span * 0.82))
+    y2 = int(max(chin_y + eye_span * 0.24, eye_y + eye_span * 1.38))
+
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(width, x2), min(height, y2)
+    if x2 <= x1 or y2 <= y1:
+        return image.copy()
+    return image.crop((x1, y1, x2, y2))
+
+
 def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
     """Scan and extract the face photo and biometric template from an uploaded document (Passport / Aadhaar / ID)."""
     landmarker = _get_landmarker()
@@ -574,16 +606,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 if lm_res.face_landmarks:
                     landmarks = lm_res.face_landmarks[0]
                     blendshapes = lm_res.face_blendshapes[0] if lm_res.face_blendshapes else None
-                    pts = np.array([[lm.x * cw, lm.y * ch] for lm in landmarks])
-                    x_min, y_min = float(pts[:, 0].min()), float(pts[:, 1].min())
-                    x_max, y_max = float(pts[:, 0].max()), float(pts[:, 1].max())
-                    bw, bh = x_max - x_min, y_max - y_min
-                    crop_x1 = max(0, int(x_min - bw * 0.25))
-                    crop_y1 = max(0, int(y_min - bh * 0.35))
-                    crop_x2 = min(cw, int(x_max + bw * 0.25))
-                    crop_y2 = min(ch, int(y_max + bh * 0.35))
-
-                    face_crop = current_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+                    face_crop = _crop_landmark_portrait(current_img, landmarks)
                     face_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(face_crop)
                     embedding = extract_biometric_embedding(landmarks, blendshapes, curr_rgb)
@@ -664,6 +687,9 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 crop_rgb = np.array(crop_resized)
                 if crop_lm_res and crop_lm_res.face_landmarks:
                     landmarks = crop_lm_res.face_landmarks[0]
+                    portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     blendshapes = crop_lm_res.face_blendshapes[0] if crop_lm_res.face_blendshapes else None
                     embedding = extract_biometric_embedding(landmarks, blendshapes, crop_rgb)
                     lm_count = len(landmarks)
@@ -731,7 +757,11 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 crop_rgb = np.array(crop_resized)
                 crop_lm_res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=crop_rgb)) if landmarker else None
                 if crop_lm_res and crop_lm_res.face_landmarks:
-                    embedding = extract_biometric_embedding(crop_lm_res.face_landmarks[0], None, crop_rgb)
+                    landmarks = crop_lm_res.face_landmarks[0]
+                    portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
+                    embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
                 else:
                     synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
                     embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
