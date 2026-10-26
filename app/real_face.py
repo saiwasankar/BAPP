@@ -599,24 +599,35 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
 
         # Stage B: BlazeFace Detector for ID Card Photo Crops (Aadhaar / National ID)
         if detector:
-            scale_factor = 1.0
-            det_img = current_img
-            if max(cw, ch) > 1000:
-                scale_factor = 1000.0 / max(cw, ch)
-                det_w, det_h = int(cw * scale_factor), int(ch * scale_factor)
-                det_img = current_img.resize((det_w, det_h), Image.Resampling.BILINEAR)
+            # Small passport portraits disappear when a high-resolution scan is
+            # reduced to a single 1000px detector input. Try a bounded image
+            # pyramid and contrast-enhanced variants, keeping the detector's
+            # coordinates paired with the exact image used for that detection.
+            base_scale = min(1.0, 1400.0 / max(cw, ch))
+            detection_candidates = []
+            for multiplier in (1.0, 1.5, 2.0):
+                scale_factor = base_scale * multiplier
+                if scale_factor > 2.0:
+                    continue
+                det_w = max(1, int(cw * scale_factor))
+                det_h = max(1, int(ch * scale_factor))
+                det_img = current_img.resize((det_w, det_h), Image.Resampling.LANCZOS) if (det_w, det_h) != current_img.size else current_img
+                det_rgb = np.array(det_img)
+                variants = [det_rgb]
+                if multiplier == 1.0:
+                    variants.append(np.array(ImageEnhance.Contrast(det_img).enhance(1.6)))
+                for variant_rgb in variants:
+                    result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=variant_rgb))
+                    for detection in result.detections or []:
+                        bbox = detection.bounding_box
+                        confidence = max((float(c) for c in getattr(detection, "categories", []) if getattr(c, "score", None) is not None), default=0.0)
+                        # Prefer confident, reasonably sized faces; the area tie-break
+                        # avoids selecting tiny false positives elsewhere on the page.
+                        rank = confidence + min(0.08, (bbox.width * bbox.height) / max(1, det_w * det_h))
+                        detection_candidates.append((rank, detection, det_img, det_rgb, scale_factor))
 
-            det_rgb = np.array(det_img)
-            mp_det_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=det_rgb)
-            det_result = detector.detect(mp_det_img)
-
-            # Fallback: contrast enhancement if low dynamic range
-            if not det_result.detections:
-                enh_det_img = ImageEnhance.Contrast(det_img).enhance(1.6)
-                det_result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(enh_det_img)))
-
-            if det_result.detections:
-                best_det = max(det_result.detections, key=lambda d: d.bounding_box.width * d.bounding_box.height)
+            if detection_candidates:
+                _, best_det, det_img, det_rgb, scale_factor = max(detection_candidates, key=lambda item: item[0])
                 bb = best_det.bounding_box
 
                 orig_bb_x = int(bb.origin_x / scale_factor)
