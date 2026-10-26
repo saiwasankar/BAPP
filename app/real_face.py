@@ -608,22 +608,22 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     blendshapes = lm_res.face_blendshapes[0] if lm_res.face_blendshapes else None
                     face_crop = _crop_landmark_portrait(current_img, landmarks)
                     crop_area_ratio = (face_crop.width * face_crop.height) / max(1, cw * ch)
-                    face_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(face_crop)
-                    embedding = extract_biometric_embedding(landmarks, blendshapes, curr_rgb)
+                    # A FaceLandmarker result over a full document can span most
+                    # of the page. Do not save that page as a biometric portrait.
+                    if crop_area_ratio <= 0.20:
+                        face_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                        face_thumbnail_b64 = encode_image_to_base64(face_crop)
+                        embedding = extract_biometric_embedding(landmarks, blendshapes, curr_rgb)
 
-                    # Keep this as a fallback rather than returning immediately.
-                    # On dense ID scans, the full-page landmarker can produce a
-                    # loose crop; the detector passes below localize the printed
-                    # portrait more tightly.
-                    landmark_fallback = {
-                        "face_detected": True,
-                        "landmarks_count": len(landmarks),
-                        "embedding": embedding.tolist(),
-                        "face_thumbnail_b64": face_thumbnail_b64,
-                        "crop_area_ratio": crop_area_ratio,
-                        "message": "Document face portrait extracted using facial landmarks."
-                    }
+                        # Keep this as a fallback rather than returning immediately.
+                        landmark_fallback = {
+                            "face_detected": True,
+                            "landmarks_count": len(landmarks),
+                            "embedding": embedding.tolist(),
+                            "face_thumbnail_b64": face_thumbnail_b64,
+                            "crop_area_ratio": crop_area_ratio,
+                            "message": "Document face portrait extracted using facial landmarks."
+                        }
         except Exception:
             pass
 
@@ -702,13 +702,11 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     embedding = extract_biometric_embedding(landmarks, blendshapes, crop_rgb)
                     lm_count = len(landmarks)
                 else:
-                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_img.size[0], det_img.size[1])
-                    portrait_crop = _crop_landmark_portrait(det_img, synth_lms)
-                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_img.width * det_img.height)
-                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
-                    lm_count = len(synth_lms)
+                    # A detector box alone is not a reliable identity template.
+                    # Try the next scale/region (including the Haar fallback)
+                    # instead of synthesizing landmarks and comparing a weak
+                    # approximation against the live face.
+                    continue
 
                 if crop_area_ratio > 0.35:
                     continue
@@ -787,13 +785,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
                 else:
-                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
-                    portrait_crop = _crop_landmark_portrait(Image.fromarray(det_rgb), synth_lms)
-                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_w * det_h)
-                    crop_area_ratio *= (rw * rh) / max(1, w_orig * h_orig)
-                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
+                    continue
 
                 if crop_area_ratio > 0.35:
                     continue
