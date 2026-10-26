@@ -620,7 +620,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=variant_rgb))
                     for detection in result.detections or []:
                         bbox = detection.bounding_box
-                        confidence = max((float(c) for c in getattr(detection, "categories", []) if getattr(c, "score", None) is not None), default=0.0)
+                        confidence = max((float(c.score) for c in getattr(detection, "categories", []) if getattr(c, "score", None) is not None), default=0.0)
                         # Prefer confident, reasonably sized faces; the area tie-break
                         # avoids selecting tiny false positives elsewhere on the page.
                         rank = confidence + min(0.08, (bbox.width * bbox.height) / max(1, det_w * det_h))
@@ -684,19 +684,38 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
     ]
     for box in regional_boxes:
         reg_crop = pil_img.crop(box)
-        reg_rgb = np.array(reg_crop)
-        mp_reg = mp.Image(image_format=mp.ImageFormat.SRGB, data=reg_rgb)
         if detector:
-            reg_det = detector.detect(mp_reg)
-            if reg_det.detections:
-                best_det = reg_det.detections[0]
+            rw, rh = reg_crop.size
+            regional_candidates = []
+            # Aadhaar portraits often occupy only a small part of a large scan.
+            # Enlarge each overlapping card region and try a contrast-adjusted
+            # view so the face detector sees enough facial detail.
+            for scale in (1.0, 1.5, 2.0):
+                det_w, det_h = max(1, int(rw * scale)), max(1, int(rh * scale))
+                det_crop = reg_crop.resize((det_w, det_h), Image.Resampling.LANCZOS) if scale != 1.0 else reg_crop
+                det_rgb = np.array(det_crop)
+                variants = [det_rgb]
+                if scale == 1.0:
+                    variants.append(np.array(ImageEnhance.Contrast(det_crop).enhance(1.6)))
+                    variants.append(np.array(ImageEnhance.Sharpness(ImageEnhance.Contrast(det_crop).enhance(1.3)).enhance(1.5)))
+                for variant in variants:
+                    reg_det = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=variant))
+                    for detection in reg_det.detections or []:
+                        bb = detection.bounding_box
+                        confidence = max((float(c.score) for c in getattr(detection, "categories", []) if getattr(c, "score", None) is not None), default=0.0)
+                        area = (bb.width * bb.height) / max(1, det_w * det_h)
+                        regional_candidates.append((confidence + min(0.08, area), detection, det_rgb, scale, det_w, det_h))
+
+            if regional_candidates:
+                _, best_det, det_rgb, scale, det_w, det_h = max(regional_candidates, key=lambda item: item[0])
                 bb = best_det.bounding_box
-                rw, rh = reg_crop.size
-                mx, my = int(bb.width * 0.30), int(bb.height * 0.35)
-                cx1 = max(0, bb.origin_x - mx)
-                cy1 = max(0, bb.origin_y - my)
-                cx2 = min(rw, bb.origin_x + bb.width + mx)
-                cy2 = min(rh, bb.origin_y + bb.height + my)
+                face_x, face_y = bb.origin_x / scale, bb.origin_y / scale
+                face_w, face_h = bb.width / scale, bb.height / scale
+                mx, my = int(face_w * 0.35), int(face_h * 0.40)
+                cx1 = max(0, int(face_x - mx))
+                cy1 = max(0, int(face_y - my))
+                cx2 = min(rw, int(face_x + face_w + mx))
+                cy2 = min(rh, int(face_y + face_h + my))
 
                 face_crop = reg_crop.crop((cx1, cy1, cx2, cy2))
                 face_crop_clean = face_crop.copy()
@@ -709,8 +728,8 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 if crop_lm_res and crop_lm_res.face_landmarks:
                     embedding = extract_biometric_embedding(crop_lm_res.face_landmarks[0], None, crop_rgb)
                 else:
-                    synth_lms = _synthesize_landmarks_from_detection(best_det, rw, rh)
-                    embedding = extract_biometric_embedding(synth_lms, None, reg_rgb)
+                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
+                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
 
                 return {
                     "face_detected": True,

@@ -360,6 +360,7 @@ function setPassportFile(base64Data, filename = 'passport_document.jpg') {
   const previewCard = document.getElementById('passport-preview-card');
   const previewImg = document.getElementById('passport-preview-img');
   const fileNameEl = document.getElementById('passport-file-name');
+  document.getElementById('passport-status-text').textContent = 'Image attached — portrait checked during scan';
   const mandateBadge = document.getElementById('upload-mandate-badge');
 
   dropzonePrompt.classList.add('hidden');
@@ -486,6 +487,16 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
 
     const session = await api('POST', '/api/passengers/scan', body);
     currentSession = session;
+    const portraitStatus = document.getElementById('passport-status-text');
+    const statusDot = document.querySelector('#passport-file-status .status-dot');
+    if (session.passport_photo_b64) {
+      portraitStatus.textContent = 'Face portrait extracted successfully';
+      statusDot.className = 'status-dot status-dot--online';
+    } else {
+      const issues = (session.document_issues || []).join(', ') || 'Portrait could not be extracted';
+      portraitStatus.textContent = `Document check failed: ${issues}`;
+      statusDot.className = 'status-dot status-dot--offline';
+    }
     faceAttempts = [];
     renderSession();
     loadDashboard();
