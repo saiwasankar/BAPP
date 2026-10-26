@@ -573,7 +573,39 @@ def _crop_landmark_portrait(image: Image.Image, landmarks) -> Image.Image:
 
 
 def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
-    """Scan and extract the face photo and biometric template from an uploaded document (Passport / Aadhaar / ID)."""
+    """Extract a face from an image or the first five pages of an uploaded PDF."""
+    try:
+        header, separator, payload = image_b64.partition(",")
+        raw = base64.b64decode(payload if separator else image_b64)
+        if header.lower().startswith("data:application/pdf") or raw.lstrip().startswith(b"%PDF-"):
+            try:
+                import pymupdf
+            except ImportError as exc:
+                return {"face_detected": False, "message": "PDF support is unavailable. Install the PyMuPDF dependency and restart the backend."}
+
+            pdf = pymupdf.open(stream=raw, filetype="pdf")
+            if pdf.is_encrypted:
+                return {"face_detected": False, "message": "Encrypted PDFs are not supported. Upload an unlocked PDF or image."}
+            for page_index in range(min(len(pdf), 5)):
+                page = pdf[page_index]
+                scale = min(2.0, 1800.0 / max(page.rect.width, page.rect.height, 1.0))
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+                page_image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                page_b64 = encode_image_to_base64(page_image)
+                result = _extract_face_from_image(page_b64)
+                if result.get("face_detected"):
+                    result["message"] = f"Portrait extracted from PDF page {page_index + 1}."
+                    return result
+            return {"face_detected": False, "message": "No clear face portrait was found in the first five PDF pages. Upload a sharper scan with the photo side visible."}
+    except Exception as exc:
+        log.warning("PDF document processing failed: %s", exc)
+        return {"face_detected": False, "message": f"Could not read this PDF: {exc}"}
+
+    return _extract_face_from_image(image_b64)
+
+
+def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
+    """Scan and extract the face photo and biometric template from one image."""
     landmarker = _get_landmarker()
     detector = _get_detector()
     if landmarker is None and detector is None:
@@ -702,13 +734,23 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     embedding = extract_biometric_embedding(landmarks, blendshapes, crop_rgb)
                     lm_count = len(landmarks)
                 else:
-                    # A detector box alone is not a reliable identity template.
-                    # Try the next scale/region (including the Haar fallback)
-                    # instead of synthesizing landmarks and comparing a weak
-                    # approximation against the live face.
-                    continue
+                    # MediaPipe may not recover a full mesh from tiny printed
+                    # portraits. Use the localized BlazeFace box and its six
+                    # detected keypoints, but never the source document itself.
+                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_img.size[0], det_img.size[1])
+                    portrait_crop = _crop_landmark_portrait(det_img, synth_lms)
+                    crop_area_ratio = (
+                        (portrait_crop.width * portrait_crop.height)
+                        / max(1, det_img.width * det_img.height)
+                    )
+                    if crop_area_ratio > 0.20:
+                        continue
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
+                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
+                    lm_count = len(synth_lms)
 
-                if crop_area_ratio > 0.35:
+                if crop_area_ratio > 0.20:
                     continue
 
                 return {
@@ -785,9 +827,17 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
                 else:
-                    continue
+                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
+                    portrait_crop = _crop_landmark_portrait(Image.fromarray(det_rgb), synth_lms)
+                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_w * det_h)
+                    crop_area_ratio *= (rw * rh) / max(1, w_orig * h_orig)
+                    if crop_area_ratio > 0.20:
+                        continue
+                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
+                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
+                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
 
-                if crop_area_ratio > 0.35:
+                if crop_area_ratio > 0.20:
                     continue
 
                 return {

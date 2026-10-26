@@ -360,17 +360,45 @@ function setPassportFile(base64Data, filename = 'passport_document.jpg') {
   const previewCard = document.getElementById('passport-preview-card');
   const previewImg = document.getElementById('passport-preview-img');
   const fileNameEl = document.getElementById('passport-file-name');
-  document.getElementById('passport-status-text').textContent = 'Image attached — portrait checked during scan';
+  const isPdf = filename.toLowerCase().endsWith('.pdf') || base64Data.startsWith('data:application/pdf');
+  document.getElementById('passport-status-text').textContent = isPdf
+    ? 'PDF attached — up to five pages will be checked during scan'
+    : 'Image attached — portrait checked during scan';
   const mandateBadge = document.getElementById('upload-mandate-badge');
 
   dropzonePrompt.classList.add('hidden');
   previewCard.classList.remove('hidden');
-  previewImg.src = base64Data;
+  if (isPdf) {
+    const pdfIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="120" viewBox="0 0 96 120"><rect x="8" y="4" width="80" height="112" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="3"/><path d="M60 4v24h28" fill="#fee2e2" stroke="#cbd5e1" stroke-width="3"/><text x="48" y="72" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700" fill="#dc2626">PDF</text><path d="M24 88h48M24 98h48" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/></svg>';
+    previewImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(pdfIcon)}`;
+  } else {
+    previewImg.src = base64Data;
+  }
   fileNameEl.textContent = filename;
 
   mandateBadge.className = 'badge badge--green';
   mandateBadge.textContent = '✓ Passport Attached';
   document.getElementById('passport-dropzone').style.borderColor = 'var(--green)';
+}
+
+function readPassportFile(file) {
+  if (!file) return;
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  if (!isPdf && !file.type.startsWith('image/')) {
+    toast('Choose a PDF or image file (JPG, PNG, WEBP).', 'error');
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    toast('File is too large. Choose a document under 20 MB.', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = event => {
+    setPassportFile(event.target.result, file.name);
+    toast(`${isPdf ? 'PDF' : 'Image'} "${file.name}" attached`, 'success');
+  };
+  reader.onerror = () => toast('Could not read the selected file.', 'error');
+  reader.readAsDataURL(file);
 }
 
 function removePassportFile() {
@@ -409,14 +437,7 @@ document.getElementById('passport-dropzone').addEventListener('click', () => {
 // File input change handler (User uploads their real file)
 document.getElementById('passport-file-input').addEventListener('change', function(e) {
   const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    setPassportFile(evt.target.result, file.name);
-    toast(`Passport file "${file.name}" uploaded successfully`, 'success');
-  };
-  reader.readAsDataURL(file);
+  readPassportFile(file);
 });
 
 // Drag & Drop handlers
@@ -429,13 +450,7 @@ const dropzone = document.getElementById('passport-dropzone');
 });
 dropzone.addEventListener('drop', (e) => {
   const file = e.dataTransfer.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    setPassportFile(evt.target.result, file.name);
-    toast(`Passport file "${file.name}" attached`, 'success');
-  };
-  reader.readAsDataURL(file);
+  readPassportFile(file);
 });
 
 function attachSamplePassportFile(passportNo, name = 'Passenger') {
