@@ -689,37 +689,37 @@ def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
                         detection_candidates.append((rank, detection, det_img, det_rgb, scale_factor))
 
             if detection_candidates:
-                _, best_det, det_img, det_rgb, scale_factor = max(detection_candidates, key=lambda item: item[0])
-                bb = best_det.bounding_box
+                for _, best_det, det_img, det_rgb, scale_factor in sorted(
+                    detection_candidates, key=lambda item: item[0], reverse=True
+                ):
+                    bb = best_det.bounding_box
+                    orig_bb_x = int(bb.origin_x / scale_factor)
+                    orig_bb_y = int(bb.origin_y / scale_factor)
+                    orig_bb_w = int(bb.width / scale_factor)
+                    orig_bb_h = int(bb.height / scale_factor)
+                    mx, my = int(orig_bb_w * 0.30), int(orig_bb_h * 0.35)
+                    crop_x1, crop_y1 = max(0, orig_bb_x - mx), max(0, orig_bb_y - my)
+                    crop_x2 = min(cw, orig_bb_x + orig_bb_w + mx)
+                    crop_y2 = min(ch, orig_bb_y + orig_bb_h + my)
+                    face_crop = current_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+                    if min(face_crop.size) < 24:
+                        continue
 
-                orig_bb_x = int(bb.origin_x / scale_factor)
-                orig_bb_y = int(bb.origin_y / scale_factor)
-                orig_bb_w = int(bb.width / scale_factor)
-                orig_bb_h = int(bb.height / scale_factor)
+                    crop_resized = face_crop.resize((320, 320), Image.Resampling.LANCZOS)
+                    crop_rgb = np.array(crop_resized)
+                    crop_lm_res = landmarker.detect(
+                        mp.Image(image_format=mp.ImageFormat.SRGB, data=crop_rgb)
+                    ) if landmarker else None
+                    if not (crop_lm_res and crop_lm_res.face_landmarks):
+                        enhanced = ImageEnhance.Sharpness(
+                            ImageEnhance.Contrast(crop_resized).enhance(1.4)
+                        ).enhance(1.4)
+                        crop_lm_res = landmarker.detect(
+                            mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(enhanced))
+                        ) if landmarker else None
+                    if not (crop_lm_res and crop_lm_res.face_landmarks):
+                        continue
 
-                mx = int(orig_bb_w * 0.30)
-                my = int(orig_bb_h * 0.35)
-                crop_x1 = max(0, orig_bb_x - mx)
-                crop_y1 = max(0, orig_bb_y - my)
-                crop_x2 = min(cw, orig_bb_x + orig_bb_w + mx)
-                crop_y2 = min(ch, orig_bb_y + orig_bb_h + my)
-
-                face_crop = current_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-                face_crop_clean = face_crop.copy()
-                face_crop_clean.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                face_thumbnail_b64 = encode_image_to_base64(face_crop_clean)
-
-                # Attempt Landmarker on the extracted crop
-                crop_resized = face_crop.resize((320, 320), Image.Resampling.LANCZOS)
-                crop_lm_res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(crop_resized))) if landmarker else None
-
-                if not (crop_lm_res and crop_lm_res.face_landmarks):
-                    enh_crop = ImageEnhance.Contrast(crop_resized).enhance(1.4)
-                    enh_crop = ImageEnhance.Sharpness(enh_crop).enhance(1.4)
-                    crop_lm_res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(enh_crop))) if landmarker else None
-
-                crop_rgb = np.array(crop_resized)
-                if crop_lm_res and crop_lm_res.face_landmarks:
                     landmarks = crop_lm_res.face_landmarks[0]
                     portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
                     crop_area_ratio = (
@@ -728,39 +728,19 @@ def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
                         * (face_crop.width * face_crop.height)
                         / max(1, cw * ch)
                     )
-                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    blendshapes = crop_lm_res.face_blendshapes[0] if crop_lm_res.face_blendshapes else None
-                    embedding = extract_biometric_embedding(landmarks, blendshapes, crop_rgb)
-                    lm_count = len(landmarks)
-                else:
-                    # MediaPipe may not recover a full mesh from tiny printed
-                    # portraits. Use the localized BlazeFace box and its six
-                    # detected keypoints, but never the source document itself.
-                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_img.size[0], det_img.size[1])
-                    portrait_crop = _crop_landmark_portrait(det_img, synth_lms)
-                    crop_area_ratio = (
-                        (portrait_crop.width * portrait_crop.height)
-                        / max(1, det_img.width * det_img.height)
-                    )
                     if crop_area_ratio > 0.20:
                         continue
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
-                    lm_count = len(synth_lms)
-
-                if crop_area_ratio > 0.20:
-                    continue
-
-                return {
-                    "face_detected": True,
-                    "landmarks_count": lm_count,
-                    "embedding": embedding.tolist(),
-                    "face_thumbnail_b64": face_thumbnail_b64,
-                    "crop_area_ratio": crop_area_ratio,
-                    "message": "ID card / Aadhaar face portrait extracted & normalized successfully."
-                }
+                    blendshapes = crop_lm_res.face_blendshapes[0] if crop_lm_res.face_blendshapes else None
+                    embedding = extract_biometric_embedding(landmarks, blendshapes, crop_rgb)
+                    return {
+                        "face_detected": True,
+                        "landmarks_count": len(landmarks),
+                        "embedding": embedding.tolist(),
+                        "face_thumbnail_b64": encode_image_to_base64(portrait_crop),
+                        "crop_area_ratio": crop_area_ratio,
+                        "message": "ID card / Aadhaar face portrait extracted & normalized successfully."
+                    }
 
     # Stage C: Regional ID search (Aadhaar cards typically have photos on the right or left half)
     regional_boxes = [
@@ -794,25 +774,33 @@ def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
                         regional_candidates.append((confidence + min(0.08, area), detection, det_rgb, scale, det_w, det_h))
 
             if regional_candidates:
-                _, best_det, det_rgb, scale, det_w, det_h = max(regional_candidates, key=lambda item: item[0])
-                bb = best_det.bounding_box
-                face_x, face_y = bb.origin_x / scale, bb.origin_y / scale
-                face_w, face_h = bb.width / scale, bb.height / scale
-                mx, my = int(face_w * 0.35), int(face_h * 0.40)
-                cx1 = max(0, int(face_x - mx))
-                cy1 = max(0, int(face_y - my))
-                cx2 = min(rw, int(face_x + face_w + mx))
-                cy2 = min(rh, int(face_y + face_h + my))
+                for _, best_det, det_rgb, scale, det_w, det_h in sorted(
+                    regional_candidates, key=lambda item: item[0], reverse=True
+                ):
+                    bb = best_det.bounding_box
+                    face_x, face_y = bb.origin_x / scale, bb.origin_y / scale
+                    face_w, face_h = bb.width / scale, bb.height / scale
+                    mx, my = int(face_w * 0.35), int(face_h * 0.40)
+                    cx1, cy1 = max(0, int(face_x - mx)), max(0, int(face_y - my))
+                    cx2, cy2 = min(rw, int(face_x + face_w + mx)), min(rh, int(face_y + face_h + my))
+                    face_crop = reg_crop.crop((cx1, cy1, cx2, cy2))
+                    if min(face_crop.size) < 24:
+                        continue
+                    crop_resized = face_crop.resize((320, 320), Image.Resampling.LANCZOS)
+                    crop_rgb = np.array(crop_resized)
+                    crop_lm_res = landmarker.detect(
+                        mp.Image(image_format=mp.ImageFormat.SRGB, data=crop_rgb)
+                    ) if landmarker else None
+                    if not (crop_lm_res and crop_lm_res.face_landmarks):
+                        enhanced = ImageEnhance.Sharpness(
+                            ImageEnhance.Contrast(crop_resized).enhance(1.4)
+                        ).enhance(1.4)
+                        crop_lm_res = landmarker.detect(
+                            mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(enhanced))
+                        ) if landmarker else None
+                    if not (crop_lm_res and crop_lm_res.face_landmarks):
+                        continue
 
-                face_crop = reg_crop.crop((cx1, cy1, cx2, cy2))
-                face_crop_clean = face_crop.copy()
-                face_crop_clean.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                face_thumbnail_b64 = encode_image_to_base64(face_crop_clean)
-
-                crop_resized = face_crop.resize((320, 320), Image.Resampling.LANCZOS)
-                crop_rgb = np.array(crop_resized)
-                crop_lm_res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=crop_rgb)) if landmarker else None
-                if crop_lm_res and crop_lm_res.face_landmarks:
                     landmarks = crop_lm_res.face_landmarks[0]
                     portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
                     crop_area_ratio = (
@@ -823,31 +811,18 @@ def _extract_face_from_image(image_b64: str) -> Dict[str, Any]:
                         * (rw * rh)
                         / max(1, w_orig * h_orig)
                     )
-                    portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
-                else:
-                    synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
-                    portrait_crop = _crop_landmark_portrait(Image.fromarray(det_rgb), synth_lms)
-                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_w * det_h)
-                    crop_area_ratio *= (rw * rh) / max(1, w_orig * h_orig)
                     if crop_area_ratio > 0.20:
                         continue
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
-                    face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
-                    embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
-
-                if crop_area_ratio > 0.20:
-                    continue
-
-                return {
-                    "face_detected": True,
-                    "landmarks_count": 478,
-                    "embedding": embedding.tolist(),
-                    "face_thumbnail_b64": face_thumbnail_b64,
-                    "crop_area_ratio": crop_area_ratio,
-                    "message": "Aadhaar / ID portrait localized from document photo region."
-                }
+                    embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
+                    return {
+                        "face_detected": True,
+                        "landmarks_count": len(landmarks),
+                        "embedding": embedding.tolist(),
+                        "face_thumbnail_b64": encode_image_to_base64(portrait_crop),
+                        "crop_area_ratio": crop_area_ratio,
+                        "message": "Aadhaar / ID portrait localized from document photo region."
+                    }
 
     # Stage D: OpenCV Haar fallback for small printed ID portraits. BlazeFace
     # can miss these when the document is a full-page scan. Keep the detector
