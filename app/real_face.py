@@ -607,6 +607,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                     landmarks = lm_res.face_landmarks[0]
                     blendshapes = lm_res.face_blendshapes[0] if lm_res.face_blendshapes else None
                     face_crop = _crop_landmark_portrait(current_img, landmarks)
+                    crop_area_ratio = (face_crop.width * face_crop.height) / max(1, cw * ch)
                     face_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(face_crop)
                     embedding = extract_biometric_embedding(landmarks, blendshapes, curr_rgb)
@@ -620,6 +621,7 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                         "landmarks_count": len(landmarks),
                         "embedding": embedding.tolist(),
                         "face_thumbnail_b64": face_thumbnail_b64,
+                        "crop_area_ratio": crop_area_ratio,
                         "message": "Document face portrait extracted using facial landmarks."
                     }
         except Exception:
@@ -688,6 +690,12 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 if crop_lm_res and crop_lm_res.face_landmarks:
                     landmarks = crop_lm_res.face_landmarks[0]
                     portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
+                    crop_area_ratio = (
+                        (portrait_crop.width * portrait_crop.height)
+                        / max(1, crop_resized.width * crop_resized.height)
+                        * (face_crop.width * face_crop.height)
+                        / max(1, cw * ch)
+                    )
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     blendshapes = crop_lm_res.face_blendshapes[0] if crop_lm_res.face_blendshapes else None
@@ -696,16 +704,21 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 else:
                     synth_lms = _synthesize_landmarks_from_detection(best_det, det_img.size[0], det_img.size[1])
                     portrait_crop = _crop_landmark_portrait(det_img, synth_lms)
+                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_img.width * det_img.height)
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
                     lm_count = len(synth_lms)
+
+                if crop_area_ratio > 0.35:
+                    continue
 
                 return {
                     "face_detected": True,
                     "landmarks_count": lm_count,
                     "embedding": embedding.tolist(),
                     "face_thumbnail_b64": face_thumbnail_b64,
+                    "crop_area_ratio": crop_area_ratio,
                     "message": "ID card / Aadhaar face portrait extracted & normalized successfully."
                 }
 
@@ -762,26 +775,49 @@ def extract_face_from_document(image_b64: str) -> Dict[str, Any]:
                 if crop_lm_res and crop_lm_res.face_landmarks:
                     landmarks = crop_lm_res.face_landmarks[0]
                     portrait_crop = _crop_landmark_portrait(crop_resized, landmarks)
+                    crop_area_ratio = (
+                        (portrait_crop.width * portrait_crop.height)
+                        / max(1, crop_resized.width * crop_resized.height)
+                        * (face_crop.width * face_crop.height)
+                        / max(1, rw * rh)
+                        * (rw * rh)
+                        / max(1, w_orig * h_orig)
+                    )
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(landmarks, None, crop_rgb)
                 else:
                     synth_lms = _synthesize_landmarks_from_detection(best_det, det_w, det_h)
                     portrait_crop = _crop_landmark_portrait(Image.fromarray(det_rgb), synth_lms)
+                    crop_area_ratio = (portrait_crop.width * portrait_crop.height) / max(1, det_w * det_h)
+                    crop_area_ratio *= (rw * rh) / max(1, w_orig * h_orig)
                     portrait_crop.thumbnail((240, 300), Image.Resampling.LANCZOS)
                     face_thumbnail_b64 = encode_image_to_base64(portrait_crop)
                     embedding = extract_biometric_embedding(synth_lms, None, det_rgb)
+
+                if crop_area_ratio > 0.35:
+                    continue
 
                 return {
                     "face_detected": True,
                     "landmarks_count": 478,
                     "embedding": embedding.tolist(),
                     "face_thumbnail_b64": face_thumbnail_b64,
+                    "crop_area_ratio": crop_area_ratio,
                     "message": "Aadhaar / ID portrait localized from document photo region."
                 }
 
     if landmark_fallback:
-        return landmark_fallback
+        # A whole-page detector result is not a portrait crop. Avoid accepting
+        # that fallback for any full-page ID scan; the user should recapture the
+        # document more closely instead of receiving a misleading match result.
+        try:
+            crop_ratio = landmark_fallback.get("crop_area_ratio", 1.0)
+            if crop_ratio <= 0.35:
+                landmark_fallback.pop("crop_area_ratio", None)
+                return landmark_fallback
+        except Exception:
+            pass
 
     return {
         "face_detected": False,
